@@ -1,0 +1,98 @@
+# ---- OS / Editor ----
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.tmp
+*.temp
+*.bak
+~$*
+
+# IDE settings
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# ---- Node / React ----
+node_modules/
+**/node_modules/
+.npm/
+.yarn/
+.pnp/
+.pnp.*
+# Keep lockfiles committed to ensure reproducible installs
+# yarn.lock
+# package-lock.json
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# Build outputs
+build/
+dist/
+**/build/
+**/dist/
+.tmp/
+.cache/
+.parcel-cache/
+.next/
+.out/
+coverage/
+**/coverage/
+
+# CRA env files (local only)
+**/.env.local
+**/.env.development.local
+**/.env.test.local
+**/.env.production.local
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual envs
+.venv/
+venv/
+env/
+ENV/
+
+# Python packaging
+*.egg-info/
+.eggs/
+.installed.cfg
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Test/Type caches
+.pytest_cache/
+.mypy_cache/
+.pyre/
+.pytype/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Databases
+*.sqlite
+*.sqlite3
+
+# ---- Secrets / Config (ignored real files) ----
+.env
+.env.*
+**/config.env
+**/secrets.*
+*.key
+*.pem
+*.crt
+
+# Allow example env/config templates
+!**/.env.example
+!**/config.example
+
+# Project-specific outputs
+face-similarity-app/frontend/build/

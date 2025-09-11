@@ -1,0 +1,17 @@
+{
+  "name": "face-similarity-workspace",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [],
+  "scripts": {
+    "dev": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "cd \"face-similarity-app\\python-backend\" && .\\.venv\\Scripts\\activate && python app.py",
+    "dev:frontend": "cd \"face-similarity-app\\frontend\" && npm start"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
