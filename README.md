@@ -1,84 +1,81 @@
-<<<<<<< HEAD
-# Forensic-Face-Sketch-Construction-and-Recognition
-=======
 # Forensic Face Sketch Construction and Recognition
 
-This repository contains a React frontend and a Python backend for forensic face similarity and recognition.
+This repository contains a React frontend and a Python backend for forensic face similarity and recognition using AI-powered facial recognition technology.
 
-## Repository Structure
+## 🚀 Quick Start
+
+**For detailed setup instructions, see [SETUP_GUIDE.md](SETUP_GUIDE.md)**
+
+### Prerequisites
+- Node.js (LTS 18.x or 20.x)
+- Python 3.9+
+- PostgreSQL
+- Git
+
+### Quick Setup
+1. **Clone the repository:**
+   ```bash
+   git clone <repository-url>
+   cd "Forensic Face Sketch Construction and Recognition"
+   ```
+
+2. **Run setup script:**
+   ```bash
+   # Windows
+   setup.bat
+   
+   # macOS/Linux
+   ./setup.sh
+   ```
+
+3. **Set up environment files:**
+   ```bash
+   # Copy example files
+   copy backend.env.example face-similarity-app\python-backend\.env
+   copy frontend.env.example face-similarity-app\frontend\.env
+   
+   # Edit .env files with your database credentials
+   ```
+
+4. **Start the application:**
+   ```bash
+   npm run dev
+   ```
+
+## 📁 Repository Structure
 
 - `face-similarity-app/frontend` — React app (Create React App)
-- `face-similarity-app/python-backend` — Python backend (Flask or similar)
+- `face-similarity-app/python-backend` — Python backend (Flask API)
+- `SETUP_GUIDE.md` — Comprehensive setup instructions
+- `setup.bat` / `setup.sh` — Automated setup scripts
+- `backend.env.example` / `frontend.env.example` — Environment file templates
 
-## Prerequisites
+## 🔧 Features
 
-- Node.js (LTS) and npm
-- Python 3.9+ and pip
+- **Face Comparison:** Compare sketches with photos using AI
+- **Criminal Database:** Manage criminal records with photos
+- **Sketch Search:** Search criminals using sketch-based queries
+- **Similarity Scoring:** Get accurate similarity scores and verification results
 
-## Get the project locally
+## 🌐 Access
 
-Download or copy the project files to your machine (e.g., via shared drive or archive). Then proceed with the environment setup below.
+- **Frontend:** http://localhost:3000
+- **Backend API:** http://localhost:5001
 
-## Environment setup (no secrets included)
+## 📚 Documentation
 
-Secrets are not included. Copy the example files in each app, rename locally, and set your values.
+- [Complete Setup Guide](SETUP_GUIDE.md) - Detailed installation and configuration instructions
+- [Troubleshooting](SETUP_GUIDE.md#-troubleshooting) - Common issues and solutions
 
-### Backend (.env)
+## 🔐 Security
 
-1. Copy the example inside backend folder:
-   ```bash
-   copy face-similarity-app\python-backend\.env.example face-similarity-app\python-backend\.env  # Windows PowerShell
-   # or
-   # cp face-similarity-app/python-backend/.env.example face-similarity-app/python-backend/.env   # macOS/Linux
-   ```
-2. Edit `face-similarity-app/python-backend/.env` and set values:
-   - `SECRET_KEY`
-   - `DATABASE_URL`
-   - `CORS_ORIGINS`
-   - Any API keys needed
+- Environment variables are stored in local `.env` files
+- Database credentials should be kept secure
+- No sensitive data is committed to the repository
 
-### Frontend (.env)
+## 🛠️ Technology Stack
 
-1. Copy the example inside frontend folder:
-   ```bash
-   copy face-similarity-app\frontend\.env.example face-similarity-app\frontend\.env  # Windows PowerShell
-   # or
-   # cp face-similarity-app/frontend/.env.example face-similarity-app/frontend/.env   # macOS/Linux
-   ```
-2. Edit `face-similarity-app/frontend/.env` and set values:
-   - `REACT_APP_API_BASE_URL`
-   - `REACT_APP_API_KEY` (if required)
-
-## Run the project locally
-
-### Backend
-```bash
-cd face-similarity-app/python-backend
-# (optional) create and activate virtual env
-# python -m venv .venv
-# .venv\Scripts\Activate.ps1  # Windows PowerShell
-# source .venv/bin/activate    # macOS/Linux
-
-pip install -r requirements.txt
-# Run the app (adjust if your app entry differs)
-python app.py
-```
-
-### Frontend
-```bash
-cd face-similarity-app/frontend
-npm install
-npm start
-```
-
-## Security & Secrets
-
-- Real secrets live only in local `.env` files within each app directory.
-- Do not upload or share API keys, database credentials, certificates, or tokens.
-- If a secret is accidentally exposed, rotate it immediately.
-
-## Notes
-
-- Frontend environment variables must be prefixed with `REACT_APP_` to be available in the browser.
-- Ensure the backend `CORS_ORIGINS` allows the frontend origin when running locally (e.g., `http://localhost:3000`).
->>>>>>> e8cbbbb (Initial commit)
+- **Frontend:** React 19, Axios
+- **Backend:** Flask, DeepFace, OpenCV, ONNX Runtime
+- **Database:** PostgreSQL with SQLAlchemy
+- **AI/ML:** DeepFace with Facenet512 model
