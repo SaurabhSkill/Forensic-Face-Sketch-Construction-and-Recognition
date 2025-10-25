@@ -1,5 +1,3 @@
-// Load environment variables from .env if present
-// Import this file at the very start of your Node entry point.
 
 require('dotenv').config();
 

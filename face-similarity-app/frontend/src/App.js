@@ -1,6 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import './App.css';
+import ScanningAnimation from './components/ScanningAnimation';
+import SearchScanningAnimation from './components/SearchScanningAnimation';
+import { useNavigate } from 'react-router-dom';
 
 function App() {
   const [sketchFile, setSketchFile] = useState(null);
@@ -8,11 +11,16 @@ function App() {
   const [similarityScore, setSimilarityScore] = useState(null);
   const [verified, setVerified] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [scanningProgress, setScanningProgress] = useState(0);
+  const [isScanning, setIsScanning] = useState(false);
+  const navigate = useNavigate();
   
   // Criminal database states
   const [criminals, setCriminals] = useState([]);
   const [criminalMatches, setCriminalMatches] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [searchScanningProgress, setSearchScanningProgress] = useState(0);
+  const [isSearchScanning, setIsSearchScanning] = useState(false);
   const [activeTab, setActiveTab] = useState('compare'); // 'compare', 'criminals', 'search'
   
   // Add criminal states
@@ -35,13 +43,37 @@ function App() {
     }
   };
 
+  // Convert similarity score to percentage
+  const getSimilarityPercentage = (score) => {
+    // Assuming the score is a distance metric (lower = more similar)
+    // Convert to percentage where 0 distance = 100% similarity
+    // and higher distances = lower percentages
+    const maxDistance = 1.0; // Maximum expected distance
+    const percentage = Math.max(0, Math.min(100, (1 - Math.min(score, maxDistance) / maxDistance) * 100));
+    return Math.round(percentage);
+  };
+
   const handleCompare = async () => {
     try {
       if (!sketchFile || !photoFile) {
         alert('Please select both a sketch and a photo.');
         return;
       }
+      
       setLoading(true);
+      setIsScanning(true);
+      setScanningProgress(0);
+
+      // Simulate scanning progress
+      const progressInterval = setInterval(() => {
+        setScanningProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return 90;
+          }
+          return prev + Math.random() * 15;
+        });
+      }, 200);
 
       const formData = new FormData();
       formData.append('sketch', sketchFile);
@@ -51,18 +83,28 @@ function App() {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      if (response && response.data && typeof response.data.distance === 'number') {
-        setSimilarityScore(response.data.distance);
-        if (typeof response.data.verified === 'boolean') {
-          setVerified(response.data.verified);
+      // Complete the progress
+      clearInterval(progressInterval);
+      setScanningProgress(100);
+
+      // Small delay to show 100% completion
+      setTimeout(() => {
+        if (response && response.data && typeof response.data.distance === 'number') {
+          setSimilarityScore(response.data.distance);
+          if (typeof response.data.verified === 'boolean') {
+            setVerified(response.data.verified);
+          }
+        } else {
+          alert('Unexpected response from server.');
         }
-      } else {
-        alert('Unexpected response from server.');
-      }
+        setIsScanning(false);
+        setLoading(false);
+      }, 500);
+
     } catch (error) {
       console.error('Compare error:', error);
       alert('Failed to compare faces. Check console for details.');
-    } finally {
+      setIsScanning(false);
       setLoading(false);
     }
   };
@@ -112,7 +154,21 @@ function App() {
         alert('Please select a sketch to search.');
         return;
       }
+      
       setSearchLoading(true);
+      setIsSearchScanning(true);
+      setSearchScanningProgress(0);
+
+      // Simulate scanning progress for search
+      const progressInterval = setInterval(() => {
+        setSearchScanningProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return 90;
+          }
+          return prev + Math.random() * 12;
+        });
+      }, 250);
 
       const formData = new FormData();
       formData.append('sketch', sketchFile);
@@ -122,14 +178,24 @@ function App() {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      if (response.data) {
-        setCriminalMatches(response.data.matches || []);
-        setActiveTab('search');
-      }
+      // Complete the progress
+      clearInterval(progressInterval);
+      setSearchScanningProgress(100);
+
+      // Small delay to show 100% completion
+      setTimeout(() => {
+        if (response.data) {
+          setCriminalMatches(response.data.matches || []);
+          setActiveTab('search');
+        }
+        setIsSearchScanning(false);
+        setSearchLoading(false);
+      }, 500);
+
     } catch (error) {
       console.error('Error searching criminals:', error);
       alert('Failed to search criminals. Check console for details.');
-    } finally {
+      setIsSearchScanning(false);
       setSearchLoading(false);
     }
   };
@@ -153,8 +219,24 @@ function App() {
   }, []);
 
 
-  return (
+  const HomeSection = () => (
     <div className="App">
+      {/* Face Comparison Scanning Animation Overlay */}
+      {isScanning && (
+        <ScanningAnimation 
+          isScanning={isScanning} 
+          progress={scanningProgress} 
+        />
+      )}
+      
+      {/* Sketch Search Scanning Animation Overlay */}
+      {isSearchScanning && (
+        <SearchScanningAnimation 
+          isScanning={isSearchScanning} 
+          progress={searchScanningProgress} 
+        />
+      )}
+      
       {/* Header */}
       <header className="header">
         <div className="container">
@@ -211,7 +293,7 @@ function App() {
             <div className="hero-text">
               <h1 className="hero-title">Unlocking Identities Through Advanced Facial Reconstruction</h1>
               <p className="hero-subtitle">Bridging the Gap Between Testimony and Positive Identification</p>
-              <button className="cta-button">START A SKETCH</button>
+              <button className="cta-button" onClick={() => navigate('/sketch')}>START A SKETCH</button>
             </div>
           </div>
         </div>
@@ -337,13 +419,27 @@ function App() {
                       <h3>Analysis Results</h3>
                       <div className="result-metrics">
                         <div className="metric">
-                          <span className="metric-label">Similarity Score:</span>
-                          <span className="metric-value">{similarityScore.toFixed(4)}</span>
+                          <span className="metric-label">Face Similarity:</span>
+                          <span className="metric-value percentage">
+                            {getSimilarityPercentage(similarityScore)}%
+                          </span>
+                        </div>
+                        <div className="metric">
+                          <span className="metric-label">Raw Score:</span>
+                          <span className="metric-value raw-score">
+                            {similarityScore.toFixed(4)}
+                          </span>
                         </div>
                         <div className="metric">
                           <span className="metric-label">Verification:</span>
                           <span className={`metric-value ${verified ? 'match' : 'no-match'}`}>
                             {verified ? 'Match' : 'No Match'}
+                          </span>
+                        </div>
+                        <div className="metric">
+                          <span className="metric-label">Confidence:</span>
+                          <span className={`metric-value confidence ${getSimilarityPercentage(similarityScore) >= 70 ? 'high' : getSimilarityPercentage(similarityScore) >= 50 ? 'medium' : 'low'}`}>
+                            {getSimilarityPercentage(similarityScore) >= 70 ? 'High' : getSimilarityPercentage(similarityScore) >= 50 ? 'Medium' : 'Low'}
                           </span>
                         </div>
                       </div>
@@ -565,6 +661,9 @@ function App() {
       </footer>
     </div>
   );
+
+  // Render Home
+  return <HomeSection />;
 }
 
 export default App;
