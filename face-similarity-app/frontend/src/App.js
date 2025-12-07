@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import axios from 'axios';
 import './App.css';
 import ScanningAnimation from './components/ScanningAnimation';
@@ -46,16 +46,22 @@ function App() {
   };
 
   // Convert similarity score to percentage
-  const getSimilarityPercentage = (score) => {
-    // Assuming the score is a distance metric (lower = more similar)
-    // Convert to percentage where 0 distance = 100% similarity
-    // and higher distances = lower percentages
-    const maxDistance = 1.0; // Maximum expected distance
-    const percentage = Math.max(0, Math.min(100, (1 - Math.min(score, maxDistance) / maxDistance) * 100));
-    return Math.round(percentage);
+  const getSimilarityPercentage = (scoreData) => {
+    if (typeof scoreData === 'object' && scoreData.similarity !== undefined) {
+      // New enhanced response format
+      return Math.round(scoreData.similarity * 100);
+    } else if (typeof scoreData === 'number') {
+      // Legacy format (distance)
+      const maxDistance = 1.0;
+      const percentage = Math.max(0, Math.min(100, (1 - Math.min(scoreData, maxDistance) / maxDistance) * 100));
+      return Math.round(percentage);
+    }
+    return 0;
   };
 
   const handleCompare = async () => {
+    let progressInterval = null;
+    
     try {
       if (!sketchFile || !photoFile) {
         alert('Please select both a sketch and a photo.');
@@ -67,7 +73,7 @@ function App() {
       setScanningProgress(0);
 
       // Simulate scanning progress
-      const progressInterval = setInterval(() => {
+      progressInterval = setInterval(() => {
         setScanningProgress(prev => {
           if (prev >= 90) {
             clearInterval(progressInterval);
@@ -83,6 +89,7 @@ function App() {
 
       const response = await axios.post('http://localhost:5001/api/compare', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 30000, // 30 second timeout
       });
 
       // Complete the progress
@@ -91,8 +98,9 @@ function App() {
 
       // Small delay to show 100% completion
       setTimeout(() => {
-        if (response && response.data && typeof response.data.distance === 'number') {
-          setSimilarityScore(response.data.distance);
+        if (response && response.data) {
+          // Store the complete response data
+          setSimilarityScore(response.data);
           if (typeof response.data.verified === 'boolean') {
             setVerified(response.data.verified);
           }
@@ -105,9 +113,30 @@ function App() {
 
     } catch (error) {
       console.error('Compare error:', error);
-      alert('Failed to compare faces. Check console for details.');
+      
+      // Clear progress and show error
+      if (progressInterval) {
+        clearInterval(progressInterval);
+      }
       setIsScanning(false);
       setLoading(false);
+      
+      // More detailed error message
+      let errorMessage = 'Failed to compare faces. ';
+      if (error.code === 'ECONNABORTED') {
+        errorMessage += 'Request timed out. The server might be overloaded.';
+      } else if (error.response) {
+        errorMessage += `Server error: ${error.response.status}`;
+        if (error.response.data && error.response.data.error) {
+          errorMessage += ` - ${error.response.data.error}`;
+        }
+      } else if (error.request) {
+        errorMessage += 'Cannot connect to server. Make sure the backend is running.';
+      } else {
+        errorMessage += error.message;
+      }
+      
+      alert(errorMessage);
     }
   };
 
@@ -448,9 +477,9 @@ function App() {
                           </span>
                         </div>
                         <div className="metric">
-                          <span className="metric-label">Raw Score:</span>
+                          <span className="metric-label">Distance Score:</span>
                           <span className="metric-value raw-score">
-                            {similarityScore.toFixed(4)}
+                            {typeof similarityScore === 'object' ? similarityScore.distance?.toFixed(4) : similarityScore.toFixed(4)}
                           </span>
                         </div>
                         <div className="metric">
@@ -461,11 +490,24 @@ function App() {
                         </div>
                         <div className="metric">
                           <span className="metric-label">Confidence:</span>
-                          <span className={`metric-value confidence ${getSimilarityPercentage(similarityScore) >= 70 ? 'high' : getSimilarityPercentage(similarityScore) >= 50 ? 'medium' : 'low'}`}>
-                            {getSimilarityPercentage(similarityScore) >= 70 ? 'High' : getSimilarityPercentage(similarityScore) >= 50 ? 'Medium' : 'Low'}
+                          <span className={`metric-value confidence ${typeof similarityScore === 'object' && similarityScore.confidence ? similarityScore.confidence : (getSimilarityPercentage(similarityScore) >= 70 ? 'high' : getSimilarityPercentage(similarityScore) >= 50 ? 'medium' : 'low')}`}>
+                            {typeof similarityScore === 'object' && similarityScore.confidence ? 
+                              similarityScore.confidence.charAt(0).toUpperCase() + similarityScore.confidence.slice(1) : 
+                              (getSimilarityPercentage(similarityScore) >= 70 ? 'High' : getSimilarityPercentage(similarityScore) >= 50 ? 'Medium' : 'Low')
+                            }
                           </span>
                         </div>
+
+                        {typeof similarityScore === 'object' && similarityScore.processing_time && (
+                          <div className="metric">
+                            <span className="metric-label">Processing Time:</span>
+                            <span className="metric-value processing-time">
+                              {similarityScore.processing_time} seconds
+                            </span>
+                          </div>
+                        )}
                       </div>
+
                     </div>
                   </div>
                 )}
