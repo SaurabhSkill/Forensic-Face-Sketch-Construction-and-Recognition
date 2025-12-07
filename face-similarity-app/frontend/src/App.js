@@ -3,6 +3,9 @@ import axios from 'axios';
 import './App.css';
 import ScanningAnimation from './components/ScanningAnimation';
 import SearchScanningAnimation from './components/SearchScanningAnimation';
+import AddCriminalForm from './components/AddCriminalForm';
+import CriminalList from './components/CriminalList';
+import CriminalDetailModal from './components/CriminalDetailModal';
 import { useNavigate } from 'react-router-dom';
 
 function App() {
@@ -23,13 +26,12 @@ function App() {
   const [isSearchScanning, setIsSearchScanning] = useState(false);
   const [activeTab, setActiveTab] = useState('compare'); // 'compare', 'criminals', 'search'
   
-  // Add criminal states
-  const [newCriminal, setNewCriminal] = useState({
-    name: '',
-    crime: '',
-    description: '',
-    photo: null
-  });
+  // Add criminal form visibility state
+  const [showAddForm, setShowAddForm] = useState(false);
+  
+  // Search detail modal state
+  const [selectedSearchCriminal, setSelectedSearchCriminal] = useState(null);
+  const [showSearchDetailModal, setShowSearchDetailModal] = useState(false);
 
   const handleSketchChange = (e) => {
     if (e.target.files && e.target.files[0]) {
@@ -120,31 +122,52 @@ function App() {
     }
   };
 
-  const addCriminal = async () => {
+  const addCriminal = async (formData) => {
     try {
-      if (!newCriminal.photo || !newCriminal.name || !newCriminal.crime) {
-        alert('Please fill in all required fields and select a photo.');
-        return;
-      }
-
-      const formData = new FormData();
-      formData.append('photo', newCriminal.photo);
-      formData.append('name', newCriminal.name);
-      formData.append('crime', newCriminal.crime);
-      formData.append('description', newCriminal.description);
-
-      const response = await axios.post('http://localhost:5001/api/criminals', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-
-      if (response.data.message) {
-        alert('Criminal added successfully!');
-        setNewCriminal({ name: '', crime: '', description: '', photo: null });
-        loadCriminals(); // Reload the list
-      }
+      // Create FormData for multipart upload
+      const submitData = new FormData();
+      
+      // Add photo file
+      submitData.append('photo', formData.photo);
+      
+      // Create profile data object (without photo)
+      const profileData = {
+        criminal_id: formData.criminal_id,
+        status: formData.status,
+        full_name: formData.full_name,
+        aliases: formData.aliases,
+        dob: formData.dob,
+        sex: formData.sex,
+        nationality: formData.nationality,
+        ethnicity: formData.ethnicity,
+        appearance: formData.appearance,
+        locations: formData.locations,
+        summary: formData.summary,
+        forensics: formData.forensics,
+        evidence: formData.evidence,
+        witness: formData.witness
+      };
+      
+      // Add JSON data as string
+      submitData.append('data', JSON.stringify(profileData));
+      
+      // Submit to API
+      const response = await axios.post(
+        'http://localhost:5001/api/criminals',
+        submitData,
+        {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        }
+      );
+      
+      console.log('Success:', response.data);
+      alert('Criminal profile added successfully!');
+      setShowAddForm(false);
+      loadCriminals(); // Reload the list
+      
     } catch (error) {
       console.error('Error adding criminal:', error);
-      alert('Failed to add criminal. Check console for details.');
+      alert('Failed to add criminal profile. Check console for details.');
     }
   };
 
@@ -453,95 +476,31 @@ function App() {
           {/* Criminal Database Tab */}
           {activeTab === 'criminals' && (
             <div className="tab-content">
-              <h2 className="section-title">Criminal Database Management</h2>
-              
-              {/* Add Criminal Form */}
-              <div className="add-criminal-form">
-                <h3>Add New Criminal</h3>
-                <div className="form-grid">
-                  <div className="form-group">
-                    <label>Name *</label>
-                    <input
-                      type="text"
-                      value={newCriminal.name}
-                      onChange={(e) => setNewCriminal({...newCriminal, name: e.target.value})}
-                      placeholder="Enter criminal name"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Crime *</label>
-                    <input
-                      type="text"
-                      value={newCriminal.crime}
-                      onChange={(e) => setNewCriminal({...newCriminal, crime: e.target.value})}
-                      placeholder="Enter crime committed"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Description</label>
-                    <textarea
-                      value={newCriminal.description}
-                      onChange={(e) => setNewCriminal({...newCriminal, description: e.target.value})}
-                      placeholder="Additional details"
-                      rows="3"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Photo *</label>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => setNewCriminal({...newCriminal, photo: e.target.files[0]})}
-                      className="file-input"
-                      id="criminal-photo"
-                    />
-                    <label htmlFor="criminal-photo" className="file-label">
-                      {newCriminal.photo ? newCriminal.photo.name : 'Choose Photo'}
-                    </label>
-                  </div>
-                </div>
-                <button className="add-button" onClick={addCriminal}>
-                  Add Criminal
+              <div className="database-header">
+                <h2 className="section-title">Criminal Database Management</h2>
+                <button 
+                  className="add-new-button"
+                  onClick={() => setShowAddForm(true)}
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor" style={{width: '20px', height: '20px'}}>
+                    <path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"/>
+                  </svg>
+                  Add New Criminal
                 </button>
               </div>
 
-              {/* Criminals List */}
-              <div className="criminals-list">
-                <h3>Criminals in Database ({criminals.length})</h3>
-                <div className="criminals-grid">
-                  {criminals.map((criminal) => (
-                    <div key={criminal.id} className="criminal-card">
-                      <div className="criminal-image">
-                        <img 
-                          src={`http://localhost:5001/api/criminals/${criminal.id}/photo`}
-                          alt={criminal.name}
-                          onError={(e) => {
-                            e.target.style.display = 'none';
-                            e.target.nextSibling.style.display = 'flex';
-                          }}
-                        />
-                        <div className="image-placeholder" style={{display: 'none'}}>
-                          <svg viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M12,4A4,4 0 0,1 16,8A4,4 0 0,1 12,12A4,4 0 0,1 8,8A4,4 0 0,1 12,4M12,14C16.42,14 20,15.79 20,18V20H4V18C4,15.79 7.58,14 12,14Z"/>
-                          </svg>
-                        </div>
-                      </div>
-                      <div className="criminal-info">
-                        <h4>{criminal.name}</h4>
-                        <p className="crime">{criminal.crime}</p>
-                        {criminal.description && <p className="description">{criminal.description}</p>}
-                        <p className="date">Added: {new Date(criminal.created_at).toLocaleDateString()}</p>
-                      </div>
-                      <button 
-                        className="delete-button"
-                        onClick={() => deleteCriminal(criminal.id)}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              <CriminalList
+                criminals={criminals}
+                onDelete={deleteCriminal}
+                onRefresh={loadCriminals}
+              />
+
+              {showAddForm && (
+                <AddCriminalForm
+                  onSubmit={addCriminal}
+                  onCancel={() => setShowAddForm(false)}
+                />
+              )}
             </div>
           )}
 
@@ -584,7 +543,7 @@ function App() {
                           <div className="match-image">
                             <img 
                               src={`http://localhost:5001/api/criminals/${match.criminal.id}/photo`}
-                              alt={match.criminal.name}
+                              alt={match.criminal.full_name || match.criminal.name}
                               onError={(e) => {
                                 e.target.style.display = 'none';
                                 e.target.nextSibling.style.display = 'flex';
@@ -597,13 +556,30 @@ function App() {
                             </div>
                           </div>
                           <div className="match-info">
-                            <h4>{match.criminal.name}</h4>
-                            <p className="crime">{match.criminal.crime}</p>
-                            {match.criminal.description && <p className="description">{match.criminal.description}</p>}
+                            <h4>{match.criminal.full_name || match.criminal.name}</h4>
+                            {match.criminal.criminal_id && <p className="criminal-id">{match.criminal.criminal_id}</p>}
+                            {match.criminal.status && <p className="status">{match.criminal.status}</p>}
+                            {match.criminal.summary && match.criminal.summary.charges && (
+                              <p className="crime">{match.criminal.summary.charges}</p>
+                            )}
                             <div className="similarity-score">
                               <span className="score-label">Match Score:</span>
                               <span className="score-value">{(match.similarity_score * 100).toFixed(1)}%</span>
                             </div>
+                          </div>
+                          <div className="match-actions">
+                            <button 
+                              className="view-details-button-search"
+                              onClick={() => {
+                                setSelectedSearchCriminal(match.criminal);
+                                setShowSearchDetailModal(true);
+                              }}
+                            >
+                              <svg viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z"/>
+                              </svg>
+                              View Details
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -623,6 +599,17 @@ function App() {
                   </div>
                 )}
               </div>
+
+              {/* Search Detail Modal */}
+              {showSearchDetailModal && selectedSearchCriminal && (
+                <CriminalDetailModal
+                  criminal={selectedSearchCriminal}
+                  onClose={() => {
+                    setShowSearchDetailModal(false);
+                    setSelectedSearchCriminal(null);
+                  }}
+                />
+              )}
             </div>
           )}
         </div>

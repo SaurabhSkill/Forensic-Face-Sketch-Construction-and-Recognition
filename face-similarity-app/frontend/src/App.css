@@ -992,3 +992,100 @@ body {
     height: 320px;
   }
 }
+
+
+/* Database Header */
+.database-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 32px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid rgba(0, 255, 136, 0.2);
+}
+
+.database-header .section-title {
+  margin: 0;
+}
+
+.add-new-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: linear-gradient(45deg, #00ff88, #00cc6a);
+  color: #0a1628;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.add-new-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 255, 136, 0.4);
+}
+
+/* Search Results - Additional Styles */
+.match-card .criminal-id {
+  color: #00ff88;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: 'Courier New', monospace;
+  margin: 4px 0;
+}
+
+.match-card .status {
+  color: #ffc107;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  margin: 4px 0;
+}
+
+
+/* Search Results - Match Actions */
+.match-actions {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.view-details-button-search {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 16px;
+  background: linear-gradient(45deg, #00ff88, #00cc6a);
+  color: #0a1628;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.view-details-button-search svg {
+  width: 18px;
+  height: 18px;
+}
+
+.view-details-button-search:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 255, 136, 0.4);
+}
+
+/* Match Card Layout Update */
+.match-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.match-card .match-info {
+  flex: 1;
+}
