@@ -9,7 +9,6 @@ This repository contains a React frontend and a Python backend for forensic face
 ### Prerequisites
 - Node.js (LTS 18.x or 20.x)
 - Python 3.9+
-- PostgreSQL
 - Git
 
 ### Quick Setup
@@ -28,13 +27,11 @@ This repository contains a React frontend and a Python backend for forensic face
    ./setup.sh
    ```
 
-3. **Set up environment files:**
+3. **Set up environment files (optional):**
    ```bash
-   # Copy example files
-   copy backend.env.example face-similarity-app\python-backend\.env
-   copy frontend.env.example face-similarity-app\frontend\.env
-   
-   # Edit .env files with your database credentials
+   # Copy example files if you need custom configuration
+   copy face-similarity-app\python-backend\.env.example face-similarity-app\python-backend\.env
+   copy face-similarity-app\frontend\.env.example face-similarity-app\frontend\.env
    ```
 
 4. **Start the application:**
@@ -46,9 +43,7 @@ This repository contains a React frontend and a Python backend for forensic face
 
 - `face-similarity-app/frontend` — React app (Create React App)
 - `face-similarity-app/python-backend` — Python backend (Flask API)
-- `SETUP_GUIDE.md` — Comprehensive setup instructions
-- `setup.bat` / `setup.sh` — Automated setup scripts
-- `backend.env.example` / `frontend.env.example` — Environment file templates
+- `setup/` — Setup scripts for automated installation
 
 ## 🔧 Features
 
@@ -64,8 +59,7 @@ This repository contains a React frontend and a Python backend for forensic face
 
 ## 📚 Documentation
 
-- [Complete Setup Guide](SETUP_GUIDE.md) - Detailed installation and configuration instructions
-- [Troubleshooting](SETUP_GUIDE.md#-troubleshooting) - Common issues and solutions
+See the sections above for setup and usage instructions.
 
 ## 🔐 Security
 
@@ -75,7 +69,7 @@ This repository contains a React frontend and a Python backend for forensic face
 
 ## 🛠️ Technology Stack
 
-- **Frontend:** React 19, Axios
+- **Frontend:** React 18, Axios
 - **Backend:** Flask, DeepFace, OpenCV, ONNX Runtime
-- **Database:** PostgreSQL with SQLAlchemy
+- **Database:** SQLite with SQLAlchemy (no setup required)
 - **AI/ML:** DeepFace with Facenet512 model

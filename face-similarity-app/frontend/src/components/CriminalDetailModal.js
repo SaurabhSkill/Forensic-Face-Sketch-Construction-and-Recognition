@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { API_BASE_URL } from '../config';
 import './CriminalDetailModal.css';
 
 const CriminalDetailModal = ({ criminal, onClose }) => {
@@ -60,7 +61,7 @@ const CriminalDetailModal = ({ criminal, onClose }) => {
           <div className="modal-left-column">
             <div className="profile-photo-large">
               <img 
-                src={`http://localhost:5001/api/criminals/${criminal.id}/photo`}
+                src={`${API_BASE_URL}/api/criminals/${criminal.id}/photo`}
                 alt={criminal.full_name || criminal.name}
                 onError={(e) => {
                   e.target.style.display = 'none';

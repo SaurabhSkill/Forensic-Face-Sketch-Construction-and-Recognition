@@ -50,7 +50,7 @@ def initialize_models():
                 model_name='Facenet512',
                 enforce_detection=False
             )
-            print("✓ Facenet512 model loaded successfully")
+            print("[OK] Facenet512 model loaded successfully")
             
         except Exception as e:
             print(f"Warning during model initialization: {e}")
@@ -138,7 +138,7 @@ def get_face_embedding(image_path: str, use_cache: bool = True) -> np.ndarray:
     if use_cache:
         file_hash = get_file_hash(image_path)
         if file_hash and file_hash in EMBEDDING_CACHE:
-            print(f"✓ Using cached embedding")
+            print(f"[OK] Using cached embedding")
             return EMBEDDING_CACHE[file_hash]
     
     # Generate embedding
@@ -209,7 +209,7 @@ def optimized_face_comparison(sketch_path: str, photo_path: str, use_cache: bool
                 cached_result = RESULT_CACHE[cache_key].copy()
                 cached_result['from_cache'] = True
                 cached_result['processing_time'] = round(time.time() - start_time, 3)
-                print(f"✓ Result retrieved from cache (instant)")
+                print(f"[OK] Result retrieved from cache (instant)")
                 return cached_result
     
     normalized_sketch = None
@@ -248,7 +248,7 @@ def optimized_face_comparison(sketch_path: str, photo_path: str, use_cache: bool
             confidence = 'low'
         
         elapsed_time = time.time() - start_time
-        print(f"✓ Comparison completed in {elapsed_time:.3f} seconds")
+        print(f"[OK] Comparison completed in {elapsed_time:.3f} seconds")
         print(f"  Similarity: {similarity:.4f} ({similarity*100:.2f}%)")
         print(f"  Distance: {distance:.4f}")
         print(f"  Verified: {verified}")
@@ -818,14 +818,14 @@ if __name__ == '__main__':
     initialize_models()
     
     port = int(os.environ.get('PORT', '5001'))
-    print(f"\n✓ Server ready on http://localhost:{port}")
+    print(f"\n[OK] Server ready on http://localhost:{port}")
     print("=" * 60)
     print("\nOptimizations enabled:")
-    print("  ✓ Model pre-initialization")
-    print("  ✓ Image normalization (CLAHE)")
-    print("  ✓ Embedding caching")
-    print("  ✓ Result caching")
-    print("  ✓ Consistent similarity calculation")
+    print("  [OK] Model pre-initialization")
+    print("  [OK] Image normalization (CLAHE)")
+    print("  [OK] Embedding caching")
+    print("  [OK] Result caching")
+    print("  [OK] Consistent similarity calculation")
     print("=" * 60 + "\n")
     
     app.run(host='0.0.0.0', port=port, debug=False)

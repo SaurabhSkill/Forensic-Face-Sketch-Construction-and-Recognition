@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import CriminalDetailModal from './CriminalDetailModal';
+import { API_BASE_URL } from '../config';
 import './CriminalList.css';
 
 const CriminalList = ({ criminals, onDelete, onRefresh }) => {
@@ -37,7 +38,7 @@ const CriminalList = ({ criminals, onDelete, onRefresh }) => {
             {/* Photo Section */}
             <div className="criminal-photo-section">
               <img 
-                src={`http://localhost:5001/api/criminals/${criminal.id}/photo`}
+                src={`${API_BASE_URL}/api/criminals/${criminal.id}/photo`}
                 alt={criminal.full_name || criminal.name}
                 onError={(e) => {
                   e.target.style.display = 'none';

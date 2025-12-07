@@ -7,6 +7,7 @@ import AddCriminalForm from './components/AddCriminalForm';
 import CriminalList from './components/CriminalList';
 import CriminalDetailModal from './components/CriminalDetailModal';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from './config';
 
 function App() {
   const [sketchFile, setSketchFile] = useState(null);
@@ -87,7 +88,7 @@ function App() {
       formData.append('sketch', sketchFile);
       formData.append('photo', photoFile);
 
-      const response = await axios.post('http://localhost:5001/api/compare', formData, {
+      const response = await axios.post(`${API_BASE_URL}/api/compare`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 30000, // 30 second timeout
       });
@@ -143,11 +144,34 @@ function App() {
   // Criminal database functions
   const loadCriminals = async () => {
     try {
-      const response = await axios.get('http://localhost:5001/api/criminals');
+      const response = await axios.get(`${API_BASE_URL}/api/criminals`);
       setCriminals(response.data.criminals || []);
     } catch (error) {
       console.error('Error loading criminals:', error);
-      alert('Failed to load criminals database.');
+      
+      // Provide more helpful error messages
+      let errorMessage = 'Failed to load criminals database. ';
+      
+      if (error.code === 'ECONNREFUSED' || error.message.includes('ERR_CONNECTION_REFUSED') || 
+          (error.request && error.request.status === 0)) {
+        errorMessage += '\n\n⚠️ Backend server is not running!\n\n';
+        errorMessage += 'Please start the backend server:\n';
+        errorMessage += '1. Open a terminal in: face-similarity-app/python-backend\n';
+        errorMessage += '2. Activate virtual environment: .venv\\Scripts\\activate (Windows)\n';
+        errorMessage += '3. Run: python app.py\n\n';
+        errorMessage += 'Or run both servers together from project root: npm run dev';
+      } else if (error.response) {
+        errorMessage += `Server error: ${error.response.status}`;
+        if (error.response.data && error.response.data.error) {
+          errorMessage += ` - ${error.response.data.error}`;
+        }
+      } else if (error.request) {
+        errorMessage += 'Cannot connect to server. Make sure the backend is running on port 5001.';
+      } else {
+        errorMessage += error.message;
+      }
+      
+      alert(errorMessage);
     }
   };
 
@@ -182,7 +206,7 @@ function App() {
       
       // Submit to API
       const response = await axios.post(
-        'http://localhost:5001/api/criminals',
+        `${API_BASE_URL}/api/criminals`,
         submitData,
         {
           headers: { 'Content-Type': 'multipart/form-data' }
@@ -226,7 +250,7 @@ function App() {
       formData.append('sketch', sketchFile);
       formData.append('threshold', '0.6'); // Similarity threshold
 
-      const response = await axios.post('http://localhost:5001/api/criminals/search', formData, {
+      const response = await axios.post(`${API_BASE_URL}/api/criminals/search`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
@@ -255,7 +279,7 @@ function App() {
   const deleteCriminal = async (criminalId) => {
     try {
       if (window.confirm('Are you sure you want to delete this criminal?')) {
-        await axios.delete(`http://localhost:5001/api/criminals/${criminalId}`);
+        await axios.delete(`${API_BASE_URL}/api/criminals/${criminalId}`);
         alert('Criminal deleted successfully!');
         loadCriminals(); // Reload the list
       }
@@ -584,7 +608,7 @@ function App() {
                         <div key={match.criminal.id} className="match-card">
                           <div className="match-image">
                             <img 
-                              src={`http://localhost:5001/api/criminals/${match.criminal.id}/photo`}
+                              src={`${API_BASE_URL}/api/criminals/${match.criminal.id}/photo`}
                               alt={match.criminal.full_name || match.criminal.name}
                               onError={(e) => {
                                 e.target.style.display = 'none';
