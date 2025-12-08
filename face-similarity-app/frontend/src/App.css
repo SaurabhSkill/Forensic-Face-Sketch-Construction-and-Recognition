@@ -28,9 +28,8 @@ body {
   background: linear-gradient(135deg, #0f1b2e 0%, #1a2a3a 100%);
   padding: 1rem 0;
   box-shadow: 0 2px 20px rgba(0, 0, 0, 0.3);
-  position: sticky;
-  top: 0;
-  z-index: 1000;
+  position: relative;
+  z-index: 100;
 }
 
 .header .container {
@@ -82,6 +81,7 @@ body {
 .nav {
   display: flex;
   gap: 2rem;
+  align-items: center;
 }
 
 .nav-link {
@@ -92,12 +92,130 @@ body {
   border-radius: 6px;
   transition: all 0.3s ease;
   position: relative;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
 }
 
 .nav-link:hover,
 .nav-link.active {
   background: linear-gradient(45deg, #00ff88, #00cc6a);
   color: #0a1628;
+}
+
+/* User Menu Styles */
+.user-menu {
+  position: relative;
+  margin-left: 1rem;
+}
+
+.user-menu-btn {
+  background: rgba(0, 255, 136, 0.1);
+  border: 2px solid rgba(0, 255, 136, 0.3);
+  color: #00ff88;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+}
+
+.user-menu-btn:hover {
+  background: rgba(0, 255, 136, 0.2);
+  border-color: #00ff88;
+  transform: rotate(90deg);
+}
+
+.user-dropdown {
+  position: absolute;
+  top: 50px;
+  right: 0;
+  background: #1a2a3a;
+  border: 1px solid rgba(0, 255, 136, 0.2);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  min-width: 280px;
+  overflow: hidden;
+  animation: dropdownSlide 0.3s ease;
+  z-index: 2000;
+}
+
+@keyframes dropdownSlide {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dropdown-item {
+  padding: 12px 20px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  border: none;
+  width: 100%;
+  text-align: left;
+  background: none;
+  font-size: 14px;
+  color: #ffffff;
+}
+
+.dropdown-item:hover {
+  background: rgba(0, 255, 136, 0.1);
+}
+
+.user-info-item {
+  cursor: default;
+  padding: 10px 20px;
+}
+
+.user-info-item:hover {
+  background: transparent;
+}
+
+.info-label {
+  font-size: 11px;
+  color: #a0aec0;
+  text-transform: uppercase;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.info-value {
+  font-size: 14px;
+  color: #ffffff;
+  font-weight: 500;
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: rgba(0, 255, 136, 0.2);
+  margin: 8px 0;
+}
+
+.logout-btn {
+  color: #ff4444;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+}
+
+.logout-btn:hover {
+  background: rgba(255, 68, 68, 0.1);
+}
+
+.logout-icon {
+  font-size: 18px;
 }
 
 /* Hero Section */

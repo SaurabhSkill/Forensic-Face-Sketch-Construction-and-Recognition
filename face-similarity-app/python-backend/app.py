@@ -4,13 +4,22 @@ import json
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from deepface import DeepFace
-from database import Criminal, get_db, create_tables
+from database import Criminal, User, get_db, create_tables
+from auth import (
+    hash_password,
+    verify_password,
+    generate_token,
+    token_required,
+    validate_email_domain,
+    validate_officer_id
+)
 import io
 import traceback
 import cv2
 import numpy as np
 import hashlib
 import time
+from datetime import datetime
 
 
 app = Flask(__name__)
@@ -318,6 +327,174 @@ def save_bytes_to_temp(data: bytes, original_filename: str) -> str:
         f.write(data)
     return path
 
+
+# ============================================================================
+# AUTHENTICATION API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/auth/register', methods=['POST'])
+def register():
+    """Register a new forensic officer"""
+    db = None
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        required_fields = ['full_name', 'department_name', 'email', 'officer_id', 'password']
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({"error": f"{field} is required"}), 400
+        
+        full_name = data.get('full_name').strip()
+        department_name = data.get('department_name').strip()
+        email = data.get('email').lower().strip()
+        officer_id = data.get('officer_id').strip()
+        password = data.get('password')
+        
+        # Validate email domain
+        if not validate_email_domain(email):
+            return jsonify({
+                "error": "Invalid email domain. Only government forensic/police emails are allowed.",
+                "allowed_domains": ["@forensic.gov.in", "@police.gov.in", "@stateforensic.gov.in"]
+            }), 400
+        
+        # Validate officer ID
+        if not validate_officer_id(officer_id):
+            return jsonify({
+                "error": "Invalid officer ID. Please contact your administrator for access."
+            }), 400
+        
+        # Validate password strength
+        if len(password) < 8:
+            return jsonify({"error": "Password must be at least 8 characters long"}), 400
+        
+        db = next(get_db())
+        
+        # Check if user already exists
+        existing_user = db.query(User).filter(User.email == email).first()
+        if existing_user:
+            return jsonify({"error": "User with this email already exists"}), 400
+        
+        # Hash password
+        password_hash = hash_password(password)
+        
+        # Create new user
+        new_user = User(
+            full_name=full_name,
+            department_name=department_name,
+            email=email,
+            officer_id=officer_id,
+            password_hash=password_hash
+        )
+        
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+        
+        # Generate token
+        token = generate_token(new_user.id, new_user.email)
+        
+        return jsonify({
+            "message": "Registration successful",
+            "token": token,
+            "user": {
+                "id": new_user.id,
+                "full_name": new_user.full_name,
+                "department_name": new_user.department_name,
+                "email": new_user.email,
+                "officer_id": new_user.officer_id,
+                "created_at": new_user.created_at.isoformat()
+            }
+        }), 201
+        
+    except Exception as e:
+        if db:
+            db.rollback()
+        print("/api/auth/register error:\n" + traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    """Login user"""
+    db = None
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        if not data.get('email') or not data.get('password'):
+            return jsonify({"error": "Email and password are required"}), 400
+        
+        email = data.get('email').lower().strip()
+        password = data.get('password')
+        
+        db = next(get_db())
+        
+        # Find user by email
+        user = db.query(User).filter(User.email == email).first()
+        
+        if not user:
+            return jsonify({"error": "Invalid email or password"}), 401
+        
+        # Verify password
+        if not verify_password(password, user.password_hash):
+            return jsonify({"error": "Invalid email or password"}), 401
+        
+        # Update last login
+        user.last_login = datetime.utcnow()
+        db.commit()
+        
+        # Generate token
+        token = generate_token(user.id, user.email)
+        
+        return jsonify({
+            "message": "Login successful",
+            "token": token,
+            "user": {
+                "id": user.id,
+                "full_name": user.full_name,
+                "department_name": user.department_name,
+                "email": user.email,
+                "officer_id": user.officer_id,
+                "last_login": user.last_login.isoformat() if user.last_login else None
+            }
+        }), 200
+        
+    except Exception as e:
+        print("/api/auth/login error:\n" + traceback.format_exc())
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route('/api/auth/verify', methods=['GET'])
+@token_required
+def verify_token():
+    """Verify if token is valid and return user info"""
+    try:
+        user = request.current_user
+        return jsonify({
+            "valid": True,
+            "user": {
+                "id": user.id,
+                "full_name": user.full_name,
+                "department_name": user.department_name,
+                "email": user.email,
+                "officer_id": user.officer_id,
+                "last_login": user.last_login.isoformat() if user.last_login else None
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ============================================================================
+# FACE COMPARISON API ENDPOINTS
+# ============================================================================
 
 @app.route('/api/compare', methods=['POST'])
 def compare_faces():
