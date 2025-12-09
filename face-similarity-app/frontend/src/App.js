@@ -9,6 +9,25 @@ import CriminalDetailModal from './components/CriminalDetailModal';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from './config';
 
+// Configure axios to automatically include auth token in all requests (except login endpoints)
+axios.interceptors.request.use(
+  (config) => {
+    // Don't add token to login/register endpoints
+    const isAuthEndpoint = config.url?.includes('/api/auth/');
+    
+    if (!isAuthEndpoint) {
+      const token = localStorage.getItem('token');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
 function App() {
   const [sketchFile, setSketchFile] = useState(null);
   const [photoFile, setPhotoFile] = useState(null);
@@ -209,7 +228,9 @@ function App() {
         `${API_BASE_URL}/api/criminals`,
         submitData,
         {
-          headers: { 'Content-Type': 'multipart/form-data' }
+          headers: { 
+            'Content-Type': 'multipart/form-data'
+          }
         }
       );
       

@@ -80,6 +80,8 @@ pip-delete-this-directory.txt
 # Databases
 *.sqlite
 *.sqlite3
+*.db
+criminal_database.db
 
 # ---- Secrets / Config (ignored real files) ----
 .env
