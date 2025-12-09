@@ -968,9 +968,8 @@ def add_criminal():
 
 
 @app.route('/api/criminals/<int:criminal_id>/photo', methods=['GET'])
-@authenticated
 def get_criminal_photo(criminal_id):
-    """Get criminal photo by ID"""
+    """Get criminal photo by ID (public endpoint for img tags)"""
     db = None
     try:
         db = next(get_db())
@@ -1067,6 +1066,18 @@ def delete_criminal(criminal_id):
 @authenticated
 def search_criminals():
     """Search for criminals using a sketch"""
+    global RESULT_CACHE, EMBEDDING_CACHE
+    
+    # Clear caches before each search to ensure fresh results
+    RESULT_CACHE.clear()
+    EMBEDDING_CACHE.clear()
+    import sys
+    print("\n" + "="*60, flush=True)
+    print("CRIMINAL SEARCH STARTED", flush=True)
+    print("Caches cleared for fresh search", flush=True)
+    print("="*60, flush=True)
+    sys.stdout.flush()
+    
     db = None
     try:
         if 'sketch' not in request.files:
@@ -1075,8 +1086,12 @@ def search_criminals():
         sketch_file = request.files['sketch']
         threshold = float(request.form.get('threshold', 0.6))  # Similarity threshold
         
+        print(f"Sketch file received: {sketch_file.filename}")
+        print(f"Threshold: {threshold}")
+        
         # Save sketch to temporary file
         sketch_path = save_temp_file(sketch_file)
+        print(f"Sketch saved to: {sketch_path}")
         
         try:
             # Get all criminals from database
@@ -1095,12 +1110,15 @@ def search_criminals():
                     )
                     
                     try:
-                        # Use optimized face comparison for database search
-                        result = optimized_face_comparison(sketch_path, criminal_photo_path, use_cache=True)
+                        # Use optimized face comparison for database search (disable cache for unique sketches)
+                        result = optimized_face_comparison(sketch_path, criminal_photo_path, use_cache=False)
                         
                         similarity_score = result.get('similarity', 0.0)
                         distance = result.get('distance', 1.0)
                         verified = result.get('verified', False)
+                        
+                        # Debug logging
+                        print(f"Comparing with {criminal.full_name}: similarity={similarity_score:.4f}, from_cache={result.get('from_cache', False)}")
                         
                         # Lower threshold for sketch matching (more lenient)
                         sketch_threshold = max(0.3, threshold * 0.6)
@@ -1256,6 +1274,10 @@ def health_check():
 
 
 if __name__ == '__main__':
+    # Disable output buffering for immediate console output
+    import sys
+    sys.stdout.reconfigure(line_buffering=True)
+    
     print("\n" + "=" * 60)
     print("FaceFind Forensics API v2 - Complete System")
     print("=" * 60)
@@ -1270,5 +1292,6 @@ if __name__ == '__main__':
     port = int(os.environ.get('PORT', '5001'))
     print(f"\n[OK] Server ready on http://localhost:{port}")
     print("=" * 60 + "\n")
+    sys.stdout.flush()
     
     app.run(debug=True, host='0.0.0.0', port=port)

@@ -4,13 +4,11 @@ import './index.css';
 import App from './App';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import SketchPage from './pages/SketchPage';
-import LoginPage from './pages/LoginPage';
 import LoginPageV2 from './pages/LoginPageV2';
 import AboutPage from './pages/AboutPage';
 import ContactPage from './pages/ContactPage';
 import AdminDashboard from './pages/AdminDashboard';
 import ChangePassword from './pages/ChangePassword';
-import ProtectedRoute from './components/ProtectedRoute';
 import ProtectedRouteV2 from './components/ProtectedRouteV2';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
@@ -46,41 +44,41 @@ root.render(
         <Route 
           path="/" 
           element={
-            <ProtectedRoute>
+            <ProtectedRouteV2>
               <App />
-            </ProtectedRoute>
+            </ProtectedRouteV2>
           } 
         />
         <Route 
           path="/sketch" 
           element={
-            <ProtectedRoute>
+            <ProtectedRouteV2>
               <SketchPage />
-            </ProtectedRoute>
+            </ProtectedRouteV2>
           } 
         />
         <Route 
           path="/about" 
           element={
-            <ProtectedRoute>
+            <ProtectedRouteV2>
               <AboutPage />
-            </ProtectedRoute>
+            </ProtectedRouteV2>
           } 
         />
         <Route 
           path="/contact" 
           element={
-            <ProtectedRoute>
+            <ProtectedRouteV2>
               <ContactPage />
-            </ProtectedRoute>
+            </ProtectedRouteV2>
           } 
         />
         <Route 
           path="*" 
           element={
-            <ProtectedRoute>
+            <ProtectedRouteV2>
               <App />
-            </ProtectedRoute>
+            </ProtectedRouteV2>
           } 
         />
       </Routes>
