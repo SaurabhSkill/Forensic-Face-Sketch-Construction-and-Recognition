@@ -63,13 +63,27 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     full_name = Column(String(255), nullable=False)
     department_name = Column(String(255), nullable=False)
-    email = Column(String(255), unique=True, nullable=False, index=True)
+    email = Column(String(255), nullable=False, index=True)  # Removed unique=True to allow same email for different roles
     officer_id = Column(String(100), nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
+    role = Column(String(50), nullable=False, default='officer')  # 'admin' or 'officer'
+    is_temp_password = Column(Integer, default=0)  # 1 if temporary password, 0 if changed
     
     # Metadata
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime, nullable=True)
+
+
+# OTP model for admin two-factor authentication
+class OTP(Base):
+    __tablename__ = "otps"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    otp_hash = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=False)
+    is_used = Column(Integer, default=0)  # 0 = not used, 1 = used
 
 
 # Criminal model with detailed forensic profile

@@ -6,4 +6,7 @@ numpy>=1.24,<2.0
 onnxruntime==1.18.0
 psycopg2-binary==2.9.9
 sqlalchemy==2.0.23
+bcrypt==4.1.2
+pyjwt==2.8.0
+tf-keras==2.20.1
 
