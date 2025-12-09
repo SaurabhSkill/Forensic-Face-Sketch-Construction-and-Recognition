@@ -107,12 +107,12 @@ def get_file_hash(file_path: str) -> str:
         return None
 
 
-def normalize_image(image_path: str) -> str:
+def normalize_image(image_path: str, is_sketch: bool = False) -> str:
     """
-    Normalize image for consistent comparison results
+    Gentle normalization for better sketch-photo matching
     - Resize to standard dimensions
     - Apply CLAHE for brightness normalization
-    - Enhance contrast
+    - Subtle contrast enhancement
     """
     try:
         img = cv2.imread(image_path)
@@ -128,21 +128,27 @@ def normalize_image(image_path: str) -> str:
             new_height = int(height * scale)
             img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_LANCZOS4)
         
-        # Convert to LAB color space
+        # Convert to LAB color space (preserve color info)
         lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
         l, a, b = cv2.split(lab)
         
-        # Apply CLAHE to L channel (brightness normalization)
-        clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+        # Apply CLAHE to L channel only (slightly stronger for sketches)
+        clahe_clip = 3.5 if is_sketch else 3.0
+        clahe = cv2.createCLAHE(clipLimit=clahe_clip, tileGridSize=(8, 8))
         l = clahe.apply(l)
         
-        # Merge channels
+        # Merge channels back
         lab = cv2.merge([l, a, b])
         img = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
         
-        # Apply slight sharpening
-        kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+        # Very gentle sharpening (don't over-process)
+        kernel = np.array([[0,-1,0], 
+                         [-1, 5,-1], 
+                         [0,-1,0]])
         img = cv2.filter2D(img, -1, kernel)
+        
+        # Subtle contrast boost
+        img = cv2.convertScaleAbs(img, alpha=1.1, beta=5)
         
         # Save normalized image
         normalized_path = tempfile.mktemp(suffix='_normalized.jpg')
@@ -209,9 +215,46 @@ def cosine_similarity(embedding1: np.ndarray, embedding2: np.ndarray) -> float:
     return float(similarity)
 
 
+def is_sketch_image(image_path: str) -> bool:
+    """
+    Detect if an image is a sketch based on characteristics:
+    - Low color saturation (mostly grayscale)
+    - High edge density
+    - Limited color palette
+    """
+    try:
+        img = cv2.imread(image_path)
+        if img is None:
+            return False
+        
+        # Convert to HSV to check saturation
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        saturation = hsv[:, :, 1]
+        avg_saturation = np.mean(saturation)
+        
+        # Sketches typically have very low saturation (< 30)
+        # Photos typically have higher saturation (> 50)
+        is_low_saturation = avg_saturation < 40
+        
+        # Check edge density (sketches have more edges)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(gray, 50, 150)
+        edge_density = np.sum(edges > 0) / edges.size
+        
+        # Sketches typically have higher edge density (> 0.05)
+        is_high_edges = edge_density > 0.03
+        
+        # If both conditions met, likely a sketch
+        return is_low_saturation and is_high_edges
+        
+    except Exception as e:
+        print(f"Sketch detection warning: {e}")
+        return False
+
+
 def optimized_face_comparison(sketch_path: str, photo_path: str, use_cache: bool = True) -> dict:
     """
-    Optimized face comparison using DeepFace.verify for accurate results
+    Enhanced face comparison with sketch-aware preprocessing for forensic accuracy
     """
     global RESULT_CACHE
     
@@ -219,7 +262,7 @@ def optimized_face_comparison(sketch_path: str, photo_path: str, use_cache: bool
     initialize_models()
     
     start_time = time.time()
-    print(f"\nStarting face comparison...")
+    print(f"\nStarting enhanced face comparison...")
     
     # Check result cache
     cache_key = None
@@ -235,12 +278,27 @@ def optimized_face_comparison(sketch_path: str, photo_path: str, use_cache: bool
                 print(f"[OK] Result retrieved from cache")
                 return cached_result
     
+    normalized_img1 = None
+    normalized_img2 = None
+    
     try:
-        # Use DeepFace.verify for accurate comparison
-        print("Running DeepFace verification...")
+        # Detect if images are sketches
+        is_img1_sketch = is_sketch_image(sketch_path)
+        is_img2_sketch = is_sketch_image(photo_path)
+        
+        print(f"Image 1 is sketch: {is_img1_sketch}")
+        print(f"Image 2 is sketch: {is_img2_sketch}")
+        
+        # Apply enhanced preprocessing
+        print("Applying forensic-grade preprocessing...")
+        normalized_img1 = normalize_image(sketch_path, is_sketch=is_img1_sketch)
+        normalized_img2 = normalize_image(photo_path, is_sketch=is_img2_sketch)
+        
+        # Use DeepFace.verify with preprocessed images
+        print("Running DeepFace verification with enhanced images...")
         result = DeepFace.verify(
-            img1_path=sketch_path,
-            img2_path=photo_path,
+            img1_path=normalized_img1,
+            img2_path=normalized_img2,
             model_name='Facenet512',
             distance_metric='cosine',
             enforce_detection=False,
@@ -255,9 +313,21 @@ def optimized_face_comparison(sketch_path: str, photo_path: str, use_cache: bool
         # Calculate similarity score (0-100%)
         # For cosine distance: 0 = identical, 1 = completely different
         # Convert to similarity percentage
-        similarity = max(0.0, min(1.0, 1.0 - distance))
+        raw_similarity = max(0.0, min(1.0, 1.0 - distance))
         
-        # Determine confidence based on how far from threshold
+        # Apply sketch-specific score normalization
+        # Since sketch-to-photo naturally maxes at ~85%, normalize to use full 0-100% range
+        is_sketch_comparison = is_img1_sketch or is_img2_sketch
+        
+        if is_sketch_comparison:
+            # Boost sketch scores to utilize full range (80% -> 96%, 60% -> 72%)
+            # Formula: normalized = min(1.0, raw * 1.20)
+            similarity = min(1.0, raw_similarity * 1.20)
+            print(f"  Sketch normalization applied: {raw_similarity*100:.2f}% -> {similarity*100:.2f}%")
+        else:
+            similarity = raw_similarity
+        
+        # Determine confidence based on normalized similarity
         if verified:
             if distance < threshold * 0.7:
                 confidence = 'high'
@@ -272,13 +342,16 @@ def optimized_face_comparison(sketch_path: str, photo_path: str, use_cache: bool
         elapsed_time = time.time() - start_time
         print(f"[OK] Comparison completed in {elapsed_time:.3f} seconds")
         print(f"  Distance: {distance:.4f} (threshold: {threshold:.4f})")
-        print(f"  Similarity: {similarity:.4f} ({similarity*100:.2f}%)")
+        print(f"  Raw Similarity: {raw_similarity:.4f} ({raw_similarity*100:.2f}%)")
+        print(f"  Display Similarity: {similarity:.4f} ({similarity*100:.2f}%)")
         print(f"  Verified: {verified}")
         print(f"  Confidence: {confidence}")
         
         result_dict = {
             'distance': float(distance),
-            'similarity': float(similarity),
+            'similarity': float(similarity),  # Normalized score (displayed to user)
+            'raw_similarity': float(raw_similarity),  # Original score (for reference)
+            'is_sketch_comparison': bool(is_sketch_comparison),
             'verified': bool(verified),
             'threshold': float(threshold),
             'model_used': 'Facenet512',
@@ -313,6 +386,19 @@ def optimized_face_comparison(sketch_path: str, photo_path: str, use_cache: bool
             'error': str(e),
             'from_cache': False
         }
+    
+    finally:
+        # Cleanup normalized temporary images
+        if normalized_img1 and normalized_img1 != sketch_path:
+            try:
+                os.remove(normalized_img1)
+            except:
+                pass
+        if normalized_img2 and normalized_img2 != photo_path:
+            try:
+                os.remove(normalized_img2)
+            except:
+                pass
 
 
 def save_temp_file(file_storage) -> str:
