@@ -211,11 +211,7 @@ def cosine_similarity(embedding1: np.ndarray, embedding2: np.ndarray) -> float:
 
 def optimized_face_comparison(sketch_path: str, photo_path: str, use_cache: bool = True) -> dict:
     """
-    Optimized face comparison with:
-    - Model pre-initialization
-    - Image normalization
-    - Embedding caching
-    - Consistent distance calculation
+    Optimized face comparison using DeepFace.verify for accurate results
     """
     global RESULT_CACHE
     
@@ -223,7 +219,7 @@ def optimized_face_comparison(sketch_path: str, photo_path: str, use_cache: bool
     initialize_models()
     
     start_time = time.time()
-    print(f"\nStarting optimized face comparison...")
+    print(f"\nStarting face comparison...")
     
     # Check result cache
     cache_key = None
@@ -236,55 +232,55 @@ def optimized_face_comparison(sketch_path: str, photo_path: str, use_cache: bool
                 cached_result = RESULT_CACHE[cache_key].copy()
                 cached_result['from_cache'] = True
                 cached_result['processing_time'] = round(time.time() - start_time, 3)
-                print(f"[OK] Result retrieved from cache (instant)")
+                print(f"[OK] Result retrieved from cache")
                 return cached_result
     
-    normalized_sketch = None
-    normalized_photo = None
-    
     try:
-        # Normalize images
-        print("Normalizing images...")
-        normalized_sketch = normalize_image(sketch_path)
-        normalized_photo = normalize_image(photo_path)
+        # Use DeepFace.verify for accurate comparison
+        print("Running DeepFace verification...")
+        result = DeepFace.verify(
+            img1_path=sketch_path,
+            img2_path=photo_path,
+            model_name='Facenet512',
+            distance_metric='cosine',
+            enforce_detection=False,
+            align=True
+        )
         
-        # Get embeddings (with caching)
-        print("Generating face embeddings...")
-        embedding1 = get_face_embedding(normalized_sketch, use_cache=use_cache)
-        embedding2 = get_face_embedding(normalized_photo, use_cache=use_cache)
+        # Extract results
+        distance = float(result['distance'])
+        verified = bool(result['verified'])
+        threshold = float(result['threshold'])
         
-        # Calculate similarity
-        print("Calculating similarity...")
-        similarity = cosine_similarity(embedding1, embedding2)
+        # Calculate similarity score (0-100%)
+        # For cosine distance: 0 = identical, 1 = completely different
+        # Convert to similarity percentage
+        similarity = max(0.0, min(1.0, 1.0 - distance))
         
-        # Convert to 0-1 range (cosine similarity is already -1 to 1, but typically 0 to 1 for faces)
-        similarity = max(0.0, min(1.0, (similarity + 1) / 2))
-        
-        # Calculate distance (inverse of similarity)
-        distance = 1.0 - similarity
-        
-        # Determine verification (more lenient for sketch-photo matching)
-        verified = similarity > 0.55  # Adjusted threshold for sketch matching
-        
-        # Determine confidence
-        if similarity > 0.75:
-            confidence = 'high'
-        elif similarity > 0.55:
-            confidence = 'medium'
+        # Determine confidence based on how far from threshold
+        if verified:
+            if distance < threshold * 0.7:
+                confidence = 'high'
+            else:
+                confidence = 'medium'
         else:
-            confidence = 'low'
+            if distance < threshold * 1.2:
+                confidence = 'low'
+            else:
+                confidence = 'very_low'
         
         elapsed_time = time.time() - start_time
         print(f"[OK] Comparison completed in {elapsed_time:.3f} seconds")
+        print(f"  Distance: {distance:.4f} (threshold: {threshold:.4f})")
         print(f"  Similarity: {similarity:.4f} ({similarity*100:.2f}%)")
-        print(f"  Distance: {distance:.4f}")
         print(f"  Verified: {verified}")
         print(f"  Confidence: {confidence}")
         
-        result = {
+        result_dict = {
             'distance': float(distance),
             'similarity': float(similarity),
             'verified': bool(verified),
+            'threshold': float(threshold),
             'model_used': 'Facenet512',
             'metric_used': 'cosine',
             'confidence': confidence,
@@ -296,9 +292,9 @@ def optimized_face_comparison(sketch_path: str, photo_path: str, use_cache: bool
         if use_cache and cache_key:
             if len(RESULT_CACHE) >= CACHE_MAX_SIZE:
                 RESULT_CACHE.pop(next(iter(RESULT_CACHE)))
-            RESULT_CACHE[cache_key] = result.copy()
+            RESULT_CACHE[cache_key] = result_dict.copy()
         
-        return result
+        return result_dict
         
     except Exception as e:
         print(f"Comparison error: {e}")
@@ -309,26 +305,14 @@ def optimized_face_comparison(sketch_path: str, photo_path: str, use_cache: bool
             'distance': 1.0,
             'similarity': 0.0,
             'verified': False,
+            'threshold': 0.4,
             'model_used': 'failed',
             'metric_used': 'none',
-            'confidence': 'low',
+            'confidence': 'error',
             'processing_time': round(elapsed_time, 3),
             'error': str(e),
             'from_cache': False
         }
-    
-    finally:
-        # Cleanup normalized images
-        if normalized_sketch and normalized_sketch != sketch_path:
-            try:
-                os.remove(normalized_sketch)
-            except:
-                pass
-        if normalized_photo and normalized_photo != photo_path:
-            try:
-                os.remove(normalized_photo)
-            except:
-                pass
 
 
 def save_temp_file(file_storage) -> str:
@@ -1066,15 +1050,9 @@ def delete_criminal(criminal_id):
 @authenticated
 def search_criminals():
     """Search for criminals using a sketch"""
-    global RESULT_CACHE, EMBEDDING_CACHE
-    
-    # Clear caches before each search to ensure fresh results
-    RESULT_CACHE.clear()
-    EMBEDDING_CACHE.clear()
     import sys
     print("\n" + "="*60, flush=True)
     print("CRIMINAL SEARCH STARTED", flush=True)
-    print("Caches cleared for fresh search", flush=True)
     print("="*60, flush=True)
     sys.stdout.flush()
     
@@ -1084,10 +1062,10 @@ def search_criminals():
             return jsonify({"error": "Sketch file is required"}), 400
         
         sketch_file = request.files['sketch']
-        threshold = float(request.form.get('threshold', 0.6))  # Similarity threshold
+        threshold = float(request.form.get('threshold', 0.4))  # Distance threshold (lower = more similar)
         
         print(f"Sketch file received: {sketch_file.filename}")
-        print(f"Threshold: {threshold}")
+        print(f"Distance threshold: {threshold}")
         
         # Save sketch to temporary file
         sketch_path = save_temp_file(sketch_file)
@@ -1110,7 +1088,7 @@ def search_criminals():
                     )
                     
                     try:
-                        # Use optimized face comparison for database search (disable cache for unique sketches)
+                        # Use face comparison (no cache for search to ensure fresh results)
                         result = optimized_face_comparison(sketch_path, criminal_photo_path, use_cache=False)
                         
                         similarity_score = result.get('similarity', 0.0)
@@ -1118,13 +1096,10 @@ def search_criminals():
                         verified = result.get('verified', False)
                         
                         # Debug logging
-                        print(f"Comparing with {criminal.full_name}: similarity={similarity_score:.4f}, from_cache={result.get('from_cache', False)}")
+                        print(f"Comparing with {criminal.full_name}: distance={distance:.4f}, similarity={similarity_score:.4f} ({similarity_score*100:.1f}%)")
                         
-                        # Lower threshold for sketch matching (more lenient)
-                        sketch_threshold = max(0.3, threshold * 0.6)
-                        
-                        # If similarity is above threshold, add to matches
-                        if verified or similarity_score >= sketch_threshold:
+                        # Add to matches if similarity is reasonable (above 30%)
+                        if similarity_score >= 0.30:
                             matches.append({
                                 "criminal": {
                                     "id": criminal.id,
