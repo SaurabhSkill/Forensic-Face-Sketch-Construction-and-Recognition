@@ -81,152 +81,78 @@ def add_criminal_to_db(criminal_data, photo_path):
 # ============================================================================
 
 criminals_to_add = [
-    # Criminal 1: [PASTE YOUR FIRST CRIMINAL DETAILS HERE]
+    # Criminal 1: Kavita Sharma
     {
         'criminal_id': 'CR-2024-002',
-        'status': 'Wanted',
-        'full_name': 'Criminal Name Here',
+        'status': 'Under Investigation',
+        'full_name': 'Kavita Sharma',
         
         # Optional fields
-        'aliases': ['Alias1', 'Alias2'],
-        'dob': '1990-01-01',
-        'sex': 'Male',
-        'nationality': 'Indian',
-        'ethnicity': 'Asian',
-        
-        # Physical appearance
-        'appearance': {
-            'height': '175 cm',
-            'weight': '70 kg',
-            'build': 'Athletic',
-            'hair': 'Black, short',
-            'eyes': 'Brown',
-            'marks': 'Scar on left cheek',
-            'tattoos': 'Dragon on right arm',
-            'scars': 'None'
-        },
-        
-        # Location
-        'locations': {
-            'city': 'Mumbai',
-            'state': 'Maharashtra',
-            'country': 'India',
-            'lastSeen': '2024-12-01',
-            'knownAddresses': [
-                'Address line 1',
-                'Address line 2'
-            ]
-        },
-        
-        # Criminal history
-        'summary': {
-            'charges': 'Armed robbery, assault',
-            'modus': 'Operates at night',
-            'risk': 'High',
-            'priorConvictions': '2 felonies'
-        },
-        
-        # Forensics
-        'forensics': {
-            'fingerprintId': 'FP-XXX-2024',
-            'dnaProfile': 'DNA-XXX-001',
-            'gait': 'Normal',
-            'voiceprint': 'VP-XXX-001'
-        },
-        
-        # Evidence
-        'evidence': [
-            {
-                'type': 'Weapon',
-                'location': 'Crime scene',
-                'date': '2024-12-01',
-                'caseNumber': 'CS-2024-001'
-            }
-        ],
-        
-        # Witness
-        'witness': {
-            'statements': 'Seen fleeing the scene',
-            'credibility': 'High',
-            'contactInfo': 'Witness ID: W-001'
-        },
-        
-        # Photo path (IMPORTANT: Update this path!)
-        'photo_path': 'path/to/criminal1_photo.jpg'
-    },
-    
-    # Criminal 2: [PASTE YOUR SECOND CRIMINAL DETAILS HERE]
-    {
-        'criminal_id': 'CR-2024-003',
-        'status': 'Wanted',
-        'full_name': 'Another Criminal Name',
-        
-        # Optional fields
-        'aliases': ['Alias1', 'Alias2'],
-        'dob': '1985-05-15',
+        'aliases': ['Kavi'],
+        'dob': '1992-11-10',
         'sex': 'Female',
         'nationality': 'Indian',
         'ethnicity': 'Asian',
         
         # Physical appearance
         'appearance': {
-            'height': '165 cm',
-            'weight': '60 kg',
+            'height': '162 cm',
+            'weight': '58 kg',
             'build': 'Slim',
-            'hair': 'Black, long',
-            'eyes': 'Brown',
-            'marks': 'Birthmark on neck',
-            'tattoos': 'None',
-            'scars': 'None'
+            'hair': 'Brown, straight',
+            'eyes': 'Black',
+            'marks': 'Mole on right cheek',
+            'tattoos': '',
+            'scars': ''
         },
         
         # Location
         'locations': {
-            'city': 'Delhi',
-            'state': 'Delhi',
+            'city': 'Jaipur',
+            'state': 'Rajasthan',
             'country': 'India',
-            'lastSeen': '2024-11-20',
+            'lastSeen': '2024-09-12',
             'knownAddresses': [
-                'Address line 1',
-                'Address line 2'
+                'Mansarovar Colony, Jaipur',
+                'PG in Vaishali Nagar'
             ]
         },
         
         # Criminal history
         'summary': {
-            'charges': 'Fraud, forgery',
-            'modus': 'Uses fake documents',
+            'charges': 'Online scam, identity fraud',
+            'modus': 'Uses fake profiles, transfers money through proxies',
             'risk': 'Medium',
-            'priorConvictions': '1 felony'
+            'priorConvictions': 'None'
         },
         
         # Forensics
         'forensics': {
-            'fingerprintId': 'FP-YYY-2024',
-            'dnaProfile': 'DNA-YYY-001',
+            'fingerprintId': 'FP-KAV-118',
+            'dnaProfile': 'DNA-KAV-221',
             'gait': 'Normal',
-            'voiceprint': 'VP-YYY-001'
+            'voiceprint': 'VP-KAVITA-09'
         },
         
         # Evidence
         'evidence': [
             {
                 'type': 'Documents',
-                'location': 'Office raid',
-                'date': '2024-11-15',
-                'caseNumber': 'CS-2024-002'
+                'location': 'Laptop recovered from PG',
+                'date': '2024-09-15',
+                'caseNumber': 'CS-2024-312'
             }
         ],
         
         # Witness
         'witness': {
-            'statements': 'Seen at the bank',
-            'credibility': 'Medium',
-            'contactInfo': 'Witness ID: W-002'
+            'statements': 'Often seen meeting unknown men at cafés.',
+            'credibility': 'Low',
+            'contactInfo': 'Witness ID: W-089'
         },
         
-        # Photo path (IMPORTANT: Update this path!)
-        'photo_path': 'path/to/criminal2_photo.jpg'
+        # Photo path
+        'photo_path': r'C:\Users\Dell\Downloads\Forensic-face\kavita.png'
     }
 ]
 

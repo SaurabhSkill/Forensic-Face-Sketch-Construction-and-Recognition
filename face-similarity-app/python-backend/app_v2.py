@@ -1184,9 +1184,8 @@ def search_criminals():
                         # Debug logging
                         print(f"Comparing with {criminal.full_name}: distance={distance:.4f}, similarity={similarity_score:.4f} ({similarity_score*100:.1f}%)")
                         
-                        # Add to matches if similarity is reasonable (above 30%)
-                        if similarity_score >= 0.30:
-                            matches.append({
+                        # Add all matches (we'll show top 3 regardless of score)
+                        matches.append({
                                 "criminal": {
                                     "id": criminal.id,
                                     "criminal_id": criminal.criminal_id,
@@ -1226,9 +1225,13 @@ def search_criminals():
             # Sort by similarity score (highest first)
             matches.sort(key=lambda x: x['similarity_score'], reverse=True)
             
+            # Return top 3 matches
+            top_matches = matches[:3]
+            
             return jsonify({
-                "matches": matches,
+                "matches": top_matches,
                 "total_matches": len(matches),
+                "showing_top": min(3, len(matches)),
                 "threshold_used": threshold
             })
             
