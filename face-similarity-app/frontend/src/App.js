@@ -177,7 +177,7 @@ function App() {
         errorMessage += 'Please start the backend server:\n';
         errorMessage += '1. Open a terminal in: face-similarity-app/python-backend\n';
         errorMessage += '2. Activate virtual environment: .venv\\Scripts\\activate (Windows)\n';
-        errorMessage += '3. Run: python app.py\n\n';
+        errorMessage += '3. Run: python app_v2.py\n\n';
         errorMessage += 'Or run both servers together from project root: npm run dev';
       } else if (error.response) {
         errorMessage += `Server error: ${error.response.status}`;
@@ -233,8 +233,6 @@ function App() {
           }
         }
       );
-      
-      console.log('Success:', response.data);
       alert('Criminal profile added successfully!');
       setShowAddForm(false);
       loadCriminals(); // Reload the list
