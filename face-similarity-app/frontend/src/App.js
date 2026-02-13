@@ -6,6 +6,7 @@ import SearchScanningAnimation from './components/SearchScanningAnimation';
 import AddCriminalForm from './components/AddCriminalForm';
 import CriminalList from './components/CriminalList';
 import CriminalDetailModal from './components/CriminalDetailModal';
+import Face3DModel from './components/Face3DModel';
 import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from './config';
 
@@ -448,14 +449,7 @@ function App() {
         <div className="container">
           <div className="hero-content">
             <div className="hero-visual">
-              <div className="tablet-mockup">
-                <div className="tablet-screen">
-                  <div className="sketch-preview">
-                    <div className="sketch-half sketch-detailed"></div>
-                    <div className="sketch-half sketch-outline"></div>
-                  </div>
-                </div>
-              </div>
+              <Face3DModel />
             </div>
             <div className="hero-text">
               <h1 className="hero-title">Unlocking Identities Through Advanced Facial Reconstruction</h1>
@@ -612,6 +606,15 @@ function App() {
                             }
                           </span>
                         </div>
+                        
+                        {typeof similarityScore === 'object' && similarityScore.confidence_score !== undefined && (
+                          <div className="metric">
+                            <span className="metric-label">Confidence Score:</span>
+                            <span className="metric-value confidence-score">
+                              {similarityScore.confidence_score.toFixed(1)}%
+                            </span>
+                          </div>
+                        )}
 
                         {typeof similarityScore === 'object' && similarityScore.processing_time && (
                           <div className="metric">
@@ -693,10 +696,11 @@ function App() {
                 {/* Search Results */}
                 {criminalMatches.length > 0 && (
                   <div className="search-results">
-                    <h3>Search Results ({criminalMatches.length} matches found)</h3>
+                    <h3>Top {criminalMatches.length} Matching Results (Ranked by Similarity)</h3>
                     <div className="matches-grid">
                       {criminalMatches.map((match, index) => (
-                        <div key={match.criminal.id} className="match-card">
+                        <div key={match.criminal.id} className={`match-card rank-${match.rank || index + 1}`}>
+                          <div className="match-rank">#{match.rank || index + 1}</div>
                           <div className="match-image">
                             <img 
                               src={`${API_BASE_URL}/api/criminals/${match.criminal.id}/photo`}
@@ -719,9 +723,17 @@ function App() {
                             {match.criminal.summary && match.criminal.summary.charges && (
                               <p className="crime">{match.criminal.summary.charges}</p>
                             )}
-                            <div className="similarity-score">
-                              <span className="score-label">Match Score:</span>
-                              <span className="score-value">{(match.similarity_score * 100).toFixed(1)}%</span>
+                            <div className="similarity-metrics">
+                              <div className="similarity-score">
+                                <span className="score-label">Match Score:</span>
+                                <span className="score-value">{(match.similarity_score * 100).toFixed(1)}%</span>
+                              </div>
+                              <div className="confidence-info">
+                                <span className="confidence-label">Confidence:</span>
+                                <span className={`confidence-badge ${match.confidence}`}>
+                                  {match.confidence ? match.confidence.charAt(0).toUpperCase() + match.confidence.slice(1).replace('_', ' ') : 'Unknown'}
+                                </span>
+                              </div>
                             </div>
                           </div>
                           <div className="match-actions">

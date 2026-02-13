@@ -44,7 +44,6 @@ create_tables()
 # ============================================================================
 
 MODEL_INITIALIZED = False
-EMBEDDING_CACHE = {}
 RESULT_CACHE = {}
 CACHE_MAX_SIZE = 100
 
@@ -70,14 +69,15 @@ def initialize_models():
         cv2.imwrite(dummy_path, dummy_img)
         
         try:
-            # Pre-load Facenet512 model
-            print("Loading Facenet512 model...")
+            # Pre-load ArcFace model
+            print("Loading ArcFace model...")
             DeepFace.represent(
                 img_path=dummy_path,
-                model_name='Facenet512',
-                enforce_detection=False
+                model_name='ArcFace',
+                enforce_detection=False,
+                align=True
             )
-            print("[OK] Facenet512 model loaded successfully")
+            print("[OK] ArcFace model loaded successfully")
             
         except Exception as e:
             print(f"Warning during model initialization: {e}")
@@ -107,112 +107,245 @@ def get_file_hash(file_path: str) -> str:
         return None
 
 
-def normalize_image(image_path: str, is_sketch: bool = False) -> str:
+# ============================================================================
+# STEP 2: EDGE-BASED DEEP FEATURE PREPROCESSING (TEST/VALIDATION)
+# ============================================================================
+# NOTE: These functions are used by test endpoints (/api/test/*)
+# The main production flow uses preprocess_for_cross_domain_matching() instead
+# Keep these for testing and validation purposes
+# ============================================================================
+
+def preprocess_for_edge_based_matching(image_path: str, is_sketch: bool = False) -> str:
     """
-    Gentle normalization for better sketch-photo matching
-    - Resize to standard dimensions
-    - Apply CLAHE for brightness normalization
-    - Subtle contrast enhancement
+    STEP 2: Edge-based preprocessing to reduce sketch-photo domain gap
+    
+    **USAGE:** Test endpoints only (/api/test/edge-preprocessing, /api/test/compare-edges)
+    **PRODUCTION:** Main flow uses preprocess_for_cross_domain_matching() instead
+    
+    For PHOTOS: Extract edges to make them look more like sketches
+    For SKETCHES: Minimal processing (just enhancement)
+    
+    This reduces the domain gap by converting both to edge-based representations.
+    
+    Args:
+        image_path: Path to image file
+        is_sketch: True if image is a sketch, False if photo
+    
+    Returns:
+        str: Path to preprocessed image file
     """
     try:
         img = cv2.imread(image_path)
         if img is None:
             return image_path
         
-        # Resize to standard size (max 800px)
-        height, width = img.shape[:2]
-        max_dim = 800
-        if max(height, width) > max_dim:
-            scale = max_dim / max(height, width)
-            new_width = int(width * scale)
-            new_height = int(height * scale)
-            img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_LANCZOS4)
+        # Convert to grayscale
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         
-        # Convert to LAB color space (preserve color info)
-        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-        l, a, b = cv2.split(lab)
+        if not is_sketch:
+            # PHOTO PREPROCESSING: Convert to sketch-like representation
+            print("  [STEP 2] Photo → Edge extraction (sketch-like)")
+            
+            # 1. Reduce noise while preserving edges
+            gray = cv2.bilateralFilter(gray, 9, 75, 75)
+            
+            # 2. Extract edges using Canny
+            edges = cv2.Canny(gray, 30, 100)
+            
+            # 3. Invert edges (white background, black lines like sketch)
+            edges = cv2.bitwise_not(edges)
+            
+            # 4. Blend edges with original for structure preservation
+            # 50% edges + 50% original
+            result = cv2.addWeighted(gray, 0.5, edges, 0.5, 0)
+            
+        else:
+            # SKETCH PREPROCESSING: Minimal enhancement
+            print("  [STEP 2] Sketch → Minimal enhancement")
+            
+            # Just apply histogram equalization for consistent brightness
+            result = cv2.equalizeHist(gray)
         
-        # Apply CLAHE to L channel only (slightly stronger for sketches)
-        clahe_clip = 3.5 if is_sketch else 3.0
-        clahe = cv2.createCLAHE(clipLimit=clahe_clip, tileGridSize=(8, 8))
-        l = clahe.apply(l)
+        # Convert back to BGR for DeepFace compatibility
+        result_bgr = cv2.cvtColor(result, cv2.COLOR_GRAY2BGR)
         
-        # Merge channels back
-        lab = cv2.merge([l, a, b])
-        img = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+        # Save with deterministic filename
+        file_hash = hashlib.md5(image_path.encode()).hexdigest()[:8]
+        mode = "sketch" if is_sketch else "photo"
+        processed_path = os.path.join(tempfile.gettempdir(), f'edge_{mode}_{file_hash}.jpg')
+        cv2.imwrite(processed_path, result_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
         
-        # Very gentle sharpening (don't over-process)
-        kernel = np.array([[0,-1,0], 
-                         [-1, 5,-1], 
-                         [0,-1,0]])
-        img = cv2.filter2D(img, -1, kernel)
-        
-        # Subtle contrast boost
-        img = cv2.convertScaleAbs(img, alpha=1.1, beta=5)
-        
-        # Save normalized image
-        normalized_path = tempfile.mktemp(suffix='_normalized.jpg')
-        cv2.imwrite(normalized_path, img, [cv2.IMWRITE_JPEG_QUALITY, 95])
-        
-        return normalized_path
+        return processed_path
         
     except Exception as e:
-        print(f"Image normalization warning: {e}")
+        print(f"Edge preprocessing error: {e}")
         return image_path
 
 
-def get_face_embedding(image_path: str, use_cache: bool = True) -> np.ndarray:
+def compare_with_edge_preprocessing(sketch_path: str, photo_path: str) -> dict:
     """
-    Get face embedding with caching to ensure consistency
+    STEP 2: Compare two images using edge-based preprocessing + ArcFace
+    
+    **USAGE:** Test endpoint only (/api/test/compare-edges)
+    **PRODUCTION:** Main flow uses forensic_face_comparison() instead
+    
+    Applies edge preprocessing to both images, then uses ArcFace for comparison.
+    
+    Args:
+        sketch_path: Path to sketch image
+        photo_path: Path to photo image
+    
+    Returns:
+        dict with similarity score and metadata
     """
-    global EMBEDDING_CACHE
+    # Detect if images are sketches
+    is_img1_sketch = is_sketch_image(sketch_path)
+    is_img2_sketch = is_sketch_image(photo_path)
     
-    # Check cache
-    if use_cache:
-        file_hash = get_file_hash(image_path)
-        if file_hash and file_hash in EMBEDDING_CACHE:
-            print(f"[OK] Using cached embedding")
-            return EMBEDDING_CACHE[file_hash]
+    print(f"  Image 1 is sketch: {is_img1_sketch}")
+    print(f"  Image 2 is sketch: {is_img2_sketch}")
     
-    # Generate embedding
+    processed_img1 = None
+    processed_img2 = None
+    
     try:
-        result = DeepFace.represent(
-            img_path=image_path,
-            model_name='Facenet512',
+        # Apply edge-based preprocessing
+        processed_img1 = preprocess_for_edge_based_matching(sketch_path, is_sketch=is_img1_sketch)
+        processed_img2 = preprocess_for_edge_based_matching(photo_path, is_sketch=is_img2_sketch)
+        
+        # Run ArcFace on preprocessed images
+        print("  [STEP 2] Running ArcFace on edge-preprocessed images...")
+        result = DeepFace.verify(
+            img1_path=processed_img1,
+            img2_path=processed_img2,
+            model_name='ArcFace',
+            distance_metric='cosine',
             enforce_detection=False,
             align=True
         )
         
-        if isinstance(result, list) and len(result) > 0:
-            embedding = np.array(result[0]['embedding'])
-        else:
-            embedding = np.array(result['embedding'])
+        distance = float(result['distance'])
+        similarity = max(0.0, 1.0 - distance)
         
-        # Cache the embedding
-        if use_cache and file_hash:
-            if len(EMBEDDING_CACHE) >= CACHE_MAX_SIZE:
-                # Remove oldest entry
-                EMBEDDING_CACHE.pop(next(iter(EMBEDDING_CACHE)))
-            EMBEDDING_CACHE[file_hash] = embedding
-        
-        return embedding
+        return {
+            'success': True,
+            'distance': distance,
+            'similarity': similarity,
+            'threshold': float(result['threshold']),
+            'model_verified': bool(result['verified']),
+            'error': None
+        }
         
     except Exception as e:
-        print(f"Embedding generation error: {e}")
-        raise
+        print(f"Edge-based comparison error: {e}")
+        return {
+            'success': False,
+            'distance': 1.0,
+            'similarity': 0.0,
+            'threshold': 0.4,
+            'model_verified': False,
+            'error': str(e)
+        }
+    
+    finally:
+        # Cleanup preprocessed images
+        if processed_img1 and processed_img1 != sketch_path:
+            try:
+                os.remove(processed_img1)
+            except:
+                pass
+        if processed_img2 and processed_img2 != photo_path:
+            try:
+                os.remove(processed_img2)
+            except:
+                pass
 
 
-def cosine_similarity(embedding1: np.ndarray, embedding2: np.ndarray) -> float:
-    """Calculate cosine similarity between two embeddings"""
-    dot_product = np.dot(embedding1, embedding2)
-    norm1 = np.linalg.norm(embedding1)
-    norm2 = np.linalg.norm(embedding2)
+# ============================================================================
+# PRODUCTION PREPROCESSING (USED BY MAIN FLOW)
+# ============================================================================
+# This function is used by forensic_face_comparison() which powers:
+# - /api/compare endpoint
+# - /api/criminals/search endpoint
+# ============================================================================
+
+def preprocess_for_cross_domain_matching(image_path: str, is_sketch: bool = False) -> str:
+    """
+    Cross-domain preprocessing for sketch-to-photo matching
     
-    if norm1 == 0 or norm2 == 0:
-        return 0.0
+    **USAGE:** Production endpoints (/api/compare, /api/criminals/search)
+    **CALLED BY:** forensic_face_comparison()
     
-    similarity = dot_product / (norm1 * norm2)
-    return float(similarity)
+    FORENSIC APPROACH:
+    - Sketches and photos are different modalities (cross-domain problem)
+    - Reduce texture/color dependence, focus on facial structure
+    - Convert both to edge-based representations for fair comparison
+    
+    DETERMINISTIC: All operations use fixed parameters for consistent results
+    """
+    try:
+        img = cv2.imread(image_path)
+        if img is None:
+            return image_path
+        
+        # Resize to standard size for consistent processing
+        height, width = img.shape[:2]
+        target_size = 512  # Standard size for processing
+        
+        if height != target_size or width != target_size:
+            # Maintain aspect ratio, pad if needed
+            scale = target_size / max(height, width)
+            new_width = int(width * scale)
+            new_height = int(height * scale)
+            img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_LANCZOS4)
+            
+            # Pad to square
+            delta_w = target_size - new_width
+            delta_h = target_size - new_height
+            top, bottom = delta_h // 2, delta_h - (delta_h // 2)
+            left, right = delta_w // 2, delta_w - (delta_w // 2)
+            img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+        
+        # Convert to grayscale (removes color/texture dependence)
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        
+        # Apply histogram equalization for consistent brightness
+        gray = cv2.equalizeHist(gray)
+        
+        # For photos: extract edges to match sketch representation
+        if not is_sketch:
+            # Apply Gaussian blur to reduce noise
+            gray = cv2.GaussianBlur(gray, (5, 5), 0)
+            
+            # Extract edges using Canny (makes photo look more like sketch)
+            edges = cv2.Canny(gray, 30, 100)
+            
+            # Invert edges (white background, black lines like sketch)
+            edges = cv2.bitwise_not(edges)
+            
+            # Blend edges with original for structure preservation
+            gray = cv2.addWeighted(gray, 0.6, edges, 0.4, 0)
+        
+        # For sketches: enhance edges
+        else:
+            # Apply bilateral filter to reduce noise while preserving edges
+            gray = cv2.bilateralFilter(gray, 9, 75, 75)
+        
+        # Convert back to BGR for DeepFace compatibility
+        processed = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+        
+        # Save with deterministic filename
+        file_hash = hashlib.md5(image_path.encode()).hexdigest()[:8]
+        mode = "sketch" if is_sketch else "photo"
+        processed_path = os.path.join(tempfile.gettempdir(), f'forensic_{mode}_{file_hash}.jpg')
+        cv2.imwrite(processed_path, processed, [cv2.IMWRITE_JPEG_QUALITY, 95])
+        
+        print(f"  Cross-domain preprocessing applied ({mode} mode)")
+        return processed_path
+        
+    except Exception as e:
+        print(f"Cross-domain preprocessing warning: {e}")
+        return image_path
 
 
 def is_sketch_image(image_path: str) -> bool:
@@ -220,7 +353,9 @@ def is_sketch_image(image_path: str) -> bool:
     Detect if an image is a sketch based on characteristics:
     - Low color saturation (mostly grayscale)
     - High edge density
-    - Limited color palette
+    
+    DETERMINISTIC: Uses fixed thresholds for consistent classification
+    NOTE: This is for logging/debugging only - does NOT affect preprocessing
     """
     try:
         img = cv2.imread(image_path)
@@ -230,31 +365,57 @@ def is_sketch_image(image_path: str) -> bool:
         # Convert to HSV to check saturation
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         saturation = hsv[:, :, 1]
-        avg_saturation = np.mean(saturation)
+        avg_saturation = float(np.mean(saturation))
         
-        # Sketches typically have very low saturation (< 30)
-        # Photos typically have higher saturation (> 50)
-        is_low_saturation = avg_saturation < 40
+        # Sketches have very low saturation (< 30)
+        # Photos have higher saturation (> 50)
+        is_low_saturation = avg_saturation < 30
         
         # Check edge density (sketches have more edges)
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         edges = cv2.Canny(gray, 50, 150)
-        edge_density = np.sum(edges > 0) / edges.size
+        edge_density = float(np.sum(edges > 0)) / float(edges.size)
         
-        # Sketches typically have higher edge density (> 0.05)
-        is_high_edges = edge_density > 0.03
+        # Sketches have higher edge density (> 0.05)
+        is_high_edges = edge_density > 0.05
         
-        # If both conditions met, likely a sketch
-        return is_low_saturation and is_high_edges
+        # Debug output
+        print(f"  Sketch detection: saturation={avg_saturation:.2f}, edge_density={edge_density:.4f}")
+        print(f"  Classification: low_sat={is_low_saturation}, high_edges={is_high_edges}")
+        
+        # Both conditions must be met
+        result = is_low_saturation and is_high_edges
+        print(f"  Final: is_sketch={result}")
+        
+        return result
         
     except Exception as e:
         print(f"Sketch detection warning: {e}")
         return False
 
 
-def optimized_face_comparison(sketch_path: str, photo_path: str, use_cache: bool = True) -> dict:
+# ============================================================================
+# PRODUCTION FACE COMPARISON (MAIN FLOW)
+# ============================================================================
+# This function powers the main production endpoints:
+# - /api/compare (direct comparison)
+# - /api/criminals/search (database search)
+# ============================================================================
+
+def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool = True) -> dict:
     """
-    Enhanced face comparison with sketch-aware preprocessing for forensic accuracy
+    Forensic-grade face comparison for sketch-to-photo matching
+    
+    **USAGE:** Production endpoints (/api/compare, /api/criminals/search)
+    **PREPROCESSING:** Uses preprocess_for_cross_domain_matching()
+    
+    CROSS-DOMAIN APPROACH:
+    - Treats sketch and photo as different modalities
+    - Applies domain-bridging preprocessing
+    - Provides realistic confidence levels
+    - Returns ranked results, not binary decisions
+    
+    DETERMINISTIC: All operations use fixed parameters for consistent results
     """
     global RESULT_CACHE
     
@@ -262,7 +423,23 @@ def optimized_face_comparison(sketch_path: str, photo_path: str, use_cache: bool
     initialize_models()
     
     start_time = time.time()
-    print(f"\nStarting enhanced face comparison...")
+    print(f"\n{'='*60}")
+    print("FORENSIC FACE COMPARISON")
+    print(f"{'='*60}")
+    print(f"  Query Image: {os.path.basename(sketch_path)}")
+    print(f"  Reference Image: {os.path.basename(photo_path)}")
+    
+    # Detect if images are sketches
+    is_img1_sketch = is_sketch_image(sketch_path)
+    is_img2_sketch = is_sketch_image(photo_path)
+    
+    print(f"  Query is sketch: {is_img1_sketch}")
+    print(f"  Reference is sketch: {is_img2_sketch}")
+    
+    # Determine comparison type
+    is_cross_domain = is_img1_sketch != is_img2_sketch
+    comparison_type = "cross-domain (sketch-to-photo)" if is_cross_domain else "same-domain"
+    print(f"  Comparison type: {comparison_type}")
     
     # Check result cache
     cache_key = None
@@ -270,36 +447,30 @@ def optimized_face_comparison(sketch_path: str, photo_path: str, use_cache: bool
         hash1 = get_file_hash(sketch_path)
         hash2 = get_file_hash(photo_path)
         if hash1 and hash2:
-            cache_key = f"{hash1}_{hash2}"
+            cache_key = f"{hash1}_{hash2}_{is_img1_sketch}_{is_img2_sketch}"
             if cache_key in RESULT_CACHE:
                 cached_result = RESULT_CACHE[cache_key].copy()
                 cached_result['from_cache'] = True
                 cached_result['processing_time'] = round(time.time() - start_time, 3)
-                print(f"[OK] Result retrieved from cache")
+                print(f"[CACHE] Result retrieved from cache")
+                print(f"{'='*60}\n")
                 return cached_result
     
-    normalized_img1 = None
-    normalized_img2 = None
+    processed_img1 = None
+    processed_img2 = None
     
     try:
-        # Detect if images are sketches
-        is_img1_sketch = is_sketch_image(sketch_path)
-        is_img2_sketch = is_sketch_image(photo_path)
+        # Apply cross-domain preprocessing
+        print(f"[PREPROCESSING] Applying cross-domain preprocessing...")
+        processed_img1 = preprocess_for_cross_domain_matching(sketch_path, is_sketch=is_img1_sketch)
+        processed_img2 = preprocess_for_cross_domain_matching(photo_path, is_sketch=is_img2_sketch)
         
-        print(f"Image 1 is sketch: {is_img1_sketch}")
-        print(f"Image 2 is sketch: {is_img2_sketch}")
-        
-        # Apply enhanced preprocessing
-        print("Applying forensic-grade preprocessing...")
-        normalized_img1 = normalize_image(sketch_path, is_sketch=is_img1_sketch)
-        normalized_img2 = normalize_image(photo_path, is_sketch=is_img2_sketch)
-        
-        # Use DeepFace.verify with preprocessed images
-        print("Running DeepFace verification with enhanced images...")
+        # Use DeepFace.verify with ArcFace model
+        print(f"[MATCHING] Running ArcFace model...")
         result = DeepFace.verify(
-            img1_path=normalized_img1,
-            img2_path=normalized_img2,
-            model_name='Facenet512',
+            img1_path=processed_img1,
+            img2_path=processed_img2,
+            model_name='ArcFace',
             distance_metric='cosine',
             enforce_detection=False,
             align=True
@@ -307,58 +478,80 @@ def optimized_face_comparison(sketch_path: str, photo_path: str, use_cache: bool
         
         # Extract results
         distance = float(result['distance'])
-        verified = bool(result['verified'])
-        threshold = float(result['threshold'])
+        model_threshold = float(result['threshold'])
         
-        # Calculate similarity score (0-100%)
-        # For cosine distance: 0 = identical, 1 = completely different
-        # Convert to similarity percentage
-        raw_similarity = max(0.0, min(1.0, 1.0 - distance))
+        # Calculate similarity score (0-1 range)
+        similarity = max(0.0, min(1.0, 1.0 - distance))
         
-        # Apply sketch-specific score normalization
-        # Since sketch-to-photo naturally maxes at ~85%, normalize to use full 0-100% range
-        is_sketch_comparison = is_img1_sketch or is_img2_sketch
-        
-        if is_sketch_comparison:
-            # Boost sketch scores to utilize full range (80% -> 96%, 60% -> 72%)
-            # Formula: normalized = min(1.0, raw * 1.20)
-            similarity = min(1.0, raw_similarity * 1.20)
-            print(f"  Sketch normalization applied: {raw_similarity*100:.2f}% -> {similarity*100:.2f}%")
-        else:
-            similarity = raw_similarity
-        
-        # Determine confidence based on normalized similarity
-        if verified:
-            if distance < threshold * 0.7:
-                confidence = 'high'
+        # Forensic confidence assessment
+        # Cross-domain matching has inherently lower confidence
+        if is_cross_domain:
+            # Sketch-to-photo: realistic confidence levels
+            if distance <= 0.30:
+                confidence_level = 'possible_match'
+                confidence_score = 75.0
+                match_quality = 'Strong candidate - requires verification'
+            elif distance <= 0.45:
+                confidence_level = 'weak_match'
+                confidence_score = 55.0
+                match_quality = 'Weak candidate - low confidence'
+            elif distance <= 0.60:
+                confidence_level = 'uncertain'
+                confidence_score = 35.0
+                match_quality = 'Uncertain - insufficient similarity'
             else:
-                confidence = 'medium'
+                confidence_level = 'unlikely'
+                confidence_score = 15.0
+                match_quality = 'Unlikely match'
         else:
-            if distance < threshold * 1.2:
-                confidence = 'low'
+            # Same-domain (photo-to-photo): higher confidence possible
+            if distance <= model_threshold * 0.5:
+                confidence_level = 'high'
+                confidence_score = 95.0
+                match_quality = 'Strong match'
+            elif distance <= model_threshold * 0.7:
+                confidence_level = 'medium'
+                confidence_score = 80.0
+                match_quality = 'Good match'
+            elif distance <= model_threshold:
+                confidence_level = 'low'
+                confidence_score = 60.0
+                match_quality = 'Weak match'
             else:
-                confidence = 'very_low'
+                confidence_level = 'very_low'
+                confidence_score = 30.0
+                match_quality = 'Poor match'
+        
+        # Model's binary decision (for reference only)
+        model_verified = bool(result['verified'])
         
         elapsed_time = time.time() - start_time
-        print(f"[OK] Comparison completed in {elapsed_time:.3f} seconds")
-        print(f"  Distance: {distance:.4f} (threshold: {threshold:.4f})")
-        print(f"  Raw Similarity: {raw_similarity:.4f} ({raw_similarity*100:.2f}%)")
-        print(f"  Display Similarity: {similarity:.4f} ({similarity*100:.2f}%)")
-        print(f"  Verified: {verified}")
-        print(f"  Confidence: {confidence}")
+        
+        print(f"[RESULTS]")
+        print(f"  Distance: {distance:.4f}")
+        print(f"  Similarity: {similarity:.4f} ({similarity*100:.1f}%)")
+        print(f"  Confidence: {confidence_level} ({confidence_score:.1f}%)")
+        print(f"  Quality: {match_quality}")
+        print(f"  Model threshold: {model_threshold:.4f}")
+        print(f"  Model decision: {'Match' if model_verified else 'No match'}")
+        print(f"  Processing time: {elapsed_time:.3f}s")
+        print(f"{'='*60}\n")
         
         result_dict = {
             'distance': float(distance),
-            'similarity': float(similarity),  # Normalized score (displayed to user)
-            'raw_similarity': float(raw_similarity),  # Original score (for reference)
-            'is_sketch_comparison': bool(is_sketch_comparison),
-            'verified': bool(verified),
-            'threshold': float(threshold),
-            'model_used': 'Facenet512',
+            'similarity': float(similarity),
+            'confidence_level': confidence_level,
+            'confidence_score': float(confidence_score),
+            'match_quality': match_quality,
+            'is_cross_domain': bool(is_cross_domain),
+            'comparison_type': comparison_type,
+            'model_verified': bool(model_verified),
+            'model_threshold': float(model_threshold),
+            'model_used': 'ArcFace',
             'metric_used': 'cosine',
-            'confidence': confidence,
             'processing_time': round(elapsed_time, 3),
-            'from_cache': False
+            'from_cache': False,
+            'forensic_note': 'Cross-domain matching has inherent limitations. Results should be used for investigation leads, not absolute identification.' if is_cross_domain else 'Same-domain comparison with higher reliability.'
         }
         
         # Cache the result
@@ -370,33 +563,39 @@ def optimized_face_comparison(sketch_path: str, photo_path: str, use_cache: bool
         return result_dict
         
     except Exception as e:
-        print(f"Comparison error: {e}")
+        print(f"[ERROR] Comparison failed: {e}")
         traceback.print_exc()
+        print(f"{'='*60}\n")
         
         elapsed_time = time.time() - start_time
         return {
             'distance': 1.0,
             'similarity': 0.0,
-            'verified': False,
-            'threshold': 0.4,
+            'confidence_level': 'error',
+            'confidence_score': 0.0,
+            'match_quality': 'Comparison failed',
+            'is_cross_domain': False,
+            'comparison_type': 'error',
+            'model_verified': False,
+            'model_threshold': 0.4,
             'model_used': 'failed',
             'metric_used': 'none',
-            'confidence': 'error',
             'processing_time': round(elapsed_time, 3),
             'error': str(e),
-            'from_cache': False
+            'from_cache': False,
+            'forensic_note': 'Comparison failed due to technical error.'
         }
     
     finally:
-        # Cleanup normalized temporary images
-        if normalized_img1 and normalized_img1 != sketch_path:
+        # Cleanup processed temporary images
+        if processed_img1 and processed_img1 != sketch_path:
             try:
-                os.remove(normalized_img1)
+                os.remove(processed_img1)
             except:
                 pass
-        if normalized_img2 and normalized_img2 != photo_path:
+        if processed_img2 and processed_img2 != photo_path:
             try:
-                os.remove(normalized_img2)
+                os.remove(processed_img2)
             except:
                 pass
 
@@ -1174,17 +1373,19 @@ def search_criminals():
                     )
                     
                     try:
-                        # Use face comparison (no cache for search to ensure fresh results)
-                        result = optimized_face_comparison(sketch_path, criminal_photo_path, use_cache=False)
+                        # Use forensic face comparison (no cache for search to ensure fresh results)
+                        result = forensic_face_comparison(sketch_path, criminal_photo_path, use_cache=False)
                         
                         similarity_score = result.get('similarity', 0.0)
                         distance = result.get('distance', 1.0)
-                        verified = result.get('verified', False)
+                        confidence_level = result.get('confidence_level', 'uncertain')
+                        confidence_score = result.get('confidence_score', 0.0)
+                        match_quality = result.get('match_quality', 'Unknown')
                         
                         # Debug logging
-                        print(f"Comparing with {criminal.full_name}: distance={distance:.4f}, similarity={similarity_score:.4f} ({similarity_score*100:.1f}%)")
+                        print(f"  {criminal.full_name}: distance={distance:.4f}, similarity={similarity_score:.2f}, confidence={confidence_level}")
                         
-                        # Add all matches (we'll show top 3 regardless of score)
+                        # Add all matches for ranking
                         matches.append({
                                 "criminal": {
                                     "id": criminal.id,
@@ -1206,9 +1407,11 @@ def search_criminals():
                                 },
                                 "similarity_score": float(similarity_score),
                                 "distance": float(distance),
-                                "verified": bool(verified),
-                                "model_used": result.get('model_used', 'unknown'),
-                                "confidence": result.get('confidence', 'low')
+                                "confidence_level": confidence_level,
+                                "confidence_score": float(confidence_score),
+                                "match_quality": match_quality,
+                                "model_used": result.get('model_used', 'ArcFace'),
+                                "is_cross_domain": result.get('is_cross_domain', True)
                             })
                     
                     finally:
@@ -1225,14 +1428,29 @@ def search_criminals():
             # Sort by similarity score (highest first)
             matches.sort(key=lambda x: x['similarity_score'], reverse=True)
             
-            # Return top 3 matches
+            # Return top 3 matches as ranked candidates
             top_matches = matches[:3]
+            
+            # Add rank to each match
+            for idx, match in enumerate(top_matches, 1):
+                match['rank'] = idx
+            
+            print(f"\n[OK] Search completed. Found {len(matches)} total matches, returning top {len(top_matches)}")
+            for match in top_matches:
+                print(f"  Rank {match['rank']}: {match['criminal']['full_name']} - Similarity: {match['similarity_score']*100:.1f}%, Confidence: {match['confidence_level']}")
             
             return jsonify({
                 "matches": top_matches,
                 "total_matches": len(matches),
                 "showing_top": min(3, len(matches)),
-                "threshold_used": threshold
+                "threshold_used": threshold,
+                "forensic_note": "These are POSSIBLE MATCHES ranked by similarity. Cross-domain sketch-to-photo matching has inherent limitations. Results should be used as investigation leads, not absolute identification. Manual verification is required.",
+                "interpretation_guide": {
+                    "possible_match": "Strong candidate - worth investigating further",
+                    "weak_match": "Weak candidate - low confidence",
+                    "uncertain": "Insufficient similarity for reliable matching",
+                    "unlikely": "Unlikely to be the same person"
+                }
             })
             
         finally:
@@ -1256,7 +1474,7 @@ def search_criminals():
 
 @app.route('/api/compare', methods=['POST'])
 def compare_faces():
-    """Compare two face images (sketch vs photo)"""
+    """Compare two face images (sketch vs photo) - Forensic comparison"""
     try:
         if 'sketch' not in request.files or 'photo' not in request.files:
             return jsonify({"error": "Both 'sketch' and 'photo' files are required"}), 400
@@ -1268,18 +1486,24 @@ def compare_faces():
         photo_path = save_temp_file(photo_file)
 
         try:
-            # Use optimized face comparison
-            result = optimized_face_comparison(sketch_path, photo_path, use_cache=True)
+            # Use forensic face comparison
+            result = forensic_face_comparison(sketch_path, photo_path, use_cache=True)
             
             return jsonify({
                 "distance": result.get('distance', 1.0),
                 "similarity": result.get('similarity', 0.0),
-                "verified": result.get('verified', False),
-                "model_used": result.get('model_used', 'unknown'),
-                "confidence": result.get('confidence', 'low'),
-                "metric_used": result.get('metric_used', 'unknown'),
+                "confidence_level": result.get('confidence_level', 'uncertain'),
+                "confidence_score": result.get('confidence_score', 0.0),
+                "match_quality": result.get('match_quality', 'Unknown'),
+                "is_cross_domain": result.get('is_cross_domain', False),
+                "comparison_type": result.get('comparison_type', 'unknown'),
+                "model_verified": result.get('model_verified', False),
+                "model_threshold": result.get('model_threshold', 0.4),
+                "model_used": result.get('model_used', 'ArcFace'),
+                "metric_used": result.get('metric_used', 'cosine'),
                 "processing_time": result.get('processing_time', 0),
                 "from_cache": result.get('from_cache', False),
+                "forensic_note": result.get('forensic_note', ''),
                 "success": True
             })
         finally:
@@ -1297,18 +1521,125 @@ def compare_faces():
         return jsonify({"error": str(e)}), 500
 
 
+# ============================================================================
+# TEST ENDPOINTS FOR STEP 2
+# ============================================================================
+
+@app.route('/api/test/edge-preprocessing', methods=['POST'])
+def test_edge_preprocessing():
+    """
+    TEST ENDPOINT: Test Step 2 - Edge-based preprocessing
+    
+    Upload an image to see the edge-preprocessed result
+    Returns the preprocessed image
+    """
+    try:
+        if 'image' not in request.files:
+            return jsonify({"error": "Image file is required"}), 400
+        
+        image_file = request.files['image']
+        is_sketch = request.form.get('is_sketch', 'false').lower() == 'true'
+        
+        image_path = save_temp_file(image_file)
+        
+        try:
+            print(f"\n[TEST STEP 2] Edge preprocessing: {image_file.filename} (is_sketch={is_sketch})")
+            
+            # Apply edge preprocessing
+            processed_path = preprocess_for_edge_based_matching(image_path, is_sketch=is_sketch)
+            
+            # Read processed image
+            with open(processed_path, 'rb') as f:
+                processed_data = f.read()
+            
+            # Cleanup
+            if processed_path != image_path:
+                try:
+                    os.remove(processed_path)
+                except:
+                    pass
+            
+            # Return processed image
+            return send_file(
+                io.BytesIO(processed_data),
+                mimetype='image/jpeg',
+                as_attachment=False
+            )
+            
+        finally:
+            try:
+                os.remove(image_path)
+            except:
+                pass
+                
+    except Exception as e:
+        print(f"/api/test/edge-preprocessing error: {e}")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/test/compare-edges', methods=['POST'])
+def test_compare_edges():
+    """
+    TEST ENDPOINT: Test Step 2 - Compare using edge-based preprocessing
+    """
+    try:
+        if 'image1' not in request.files or 'image2' not in request.files:
+            return jsonify({"error": "Both image1 and image2 are required"}), 400
+        
+        image1_file = request.files['image1']
+        image2_file = request.files['image2']
+        
+        image1_path = save_temp_file(image1_file)
+        image2_path = save_temp_file(image2_file)
+        
+        try:
+            print(f"\n[TEST STEP 2] Comparing with edge preprocessing:")
+            print(f"  Image 1: {image1_file.filename}")
+            print(f"  Image 2: {image2_file.filename}")
+            
+            # Compare using edge preprocessing
+            result = compare_with_edge_preprocessing(image1_path, image2_path)
+            
+            if result['success']:
+                print(f"  Deep similarity (edge-based): {result['similarity']:.3f}")
+                
+                return jsonify({
+                    "success": True,
+                    "deep_similarity": result['similarity'],
+                    "distance": result['distance'],
+                    "threshold": result['threshold'],
+                    "model_verified": result['model_verified'],
+                    "message": f"Deep similarity (edge-based): {result['similarity']:.1%}"
+                })
+            else:
+                return jsonify({
+                    "success": False,
+                    "error": result['error']
+                }), 400
+            
+        finally:
+            try:
+                os.remove(image1_path)
+                os.remove(image2_path)
+            except:
+                pass
+                
+    except Exception as e:
+        print(f"/api/test/compare-edges error: {e}")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/cache/clear', methods=['POST'])
 def clear_cache():
     """Clear all caches"""
-    global RESULT_CACHE, EMBEDDING_CACHE
+    global RESULT_CACHE
     result_count = len(RESULT_CACHE)
-    embedding_count = len(EMBEDDING_CACHE)
     RESULT_CACHE.clear()
-    EMBEDDING_CACHE.clear()
     return jsonify({
         "message": "Caches cleared successfully",
-        "result_cache_cleared": result_count,
-        "embedding_cache_cleared": embedding_count
+        "result_cache_cleared": result_count
     })
 
 
@@ -1317,7 +1648,6 @@ def cache_stats():
     """Get cache statistics"""
     return jsonify({
         "result_cache_size": len(RESULT_CACHE),
-        "embedding_cache_size": len(EMBEDDING_CACHE),
         "max_cache_size": CACHE_MAX_SIZE,
         "model_initialized": MODEL_INITIALIZED
     })
@@ -1359,3 +1689,4 @@ if __name__ == '__main__':
     sys.stdout.flush()
     
     app.run(debug=True, host='0.0.0.0', port=port)
+

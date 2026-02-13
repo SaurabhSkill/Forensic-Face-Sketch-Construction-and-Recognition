@@ -250,70 +250,7 @@ body {
   display: flex;
   justify-content: center;
   align-items: center;
-}
-
-.tablet-mockup {
-  width: 300px;
-  height: 400px;
-  background: #1a2a3a;
-  border-radius: 20px;
-  padding: 20px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
-  position: relative;
-}
-
-.tablet-screen {
   width: 100%;
-  height: 100%;
-  background: #ffffff;
-  border-radius: 12px;
-  overflow: hidden;
-  position: relative;
-}
-
-.sketch-preview {
-  width: 100%;
-  height: 100%;
-  display: flex;
-}
-
-.sketch-half {
-  flex: 1;
-  position: relative;
-}
-
-.sketch-detailed {
-  background: linear-gradient(45deg, #f0f0f0, #e0e0e0);
-  position: relative;
-}
-
-.sketch-detailed::after {
-  content: '';
-  position: absolute;
-  top: 20%;
-  left: 20%;
-  width: 60%;
-  height: 60%;
-  background: radial-gradient(circle, #333 2px, transparent 2px);
-  background-size: 20px 20px;
-  opacity: 0.3;
-}
-
-.sketch-outline {
-  background: linear-gradient(45deg, #ff6b35, #f7931e);
-  position: relative;
-}
-
-.sketch-outline::after {
-  content: '';
-  position: absolute;
-  top: 30%;
-  left: 30%;
-  width: 40%;
-  height: 40%;
-  border: 3px solid #ff6b35;
-  border-radius: 50%;
-  opacity: 0.8;
 }
 
 .hero-text {
@@ -1104,11 +1041,6 @@ body {
   .section-title {
     font-size: 2rem;
   }
-  
-  .tablet-mockup {
-    width: 250px;
-    height: 320px;
-  }
 }
 
 
@@ -1206,4 +1138,111 @@ body {
 
 .match-card .match-info {
   flex: 1;
+}
+
+/* Rank Badge for Top 3 Matches */
+.match-rank {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: linear-gradient(135deg, #00ff88, #00cc6a);
+  color: #0a1628;
+  font-weight: 700;
+  font-size: 18px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0, 255, 136, 0.4);
+}
+
+.match-card.rank-1 {
+  border-color: #ffd700;
+  box-shadow: 0 4px 20px rgba(255, 215, 0, 0.3);
+}
+
+.match-card.rank-1 .match-rank {
+  background: linear-gradient(135deg, #ffd700, #ffed4e);
+}
+
+.match-card.rank-2 {
+  border-color: #c0c0c0;
+  box-shadow: 0 4px 20px rgba(192, 192, 192, 0.3);
+}
+
+.match-card.rank-2 .match-rank {
+  background: linear-gradient(135deg, #c0c0c0, #e8e8e8);
+}
+
+.match-card.rank-3 {
+  border-color: #cd7f32;
+  box-shadow: 0 4px 20px rgba(205, 127, 50, 0.3);
+}
+
+.match-card.rank-3 .match-rank {
+  background: linear-gradient(135deg, #cd7f32, #e89b5a);
+}
+
+/* Confidence Badge Styles */
+.confidence-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.confidence-badge.high {
+  background: rgba(0, 255, 136, 0.2);
+  color: #00ff88;
+  border: 1px solid #00ff88;
+}
+
+.confidence-badge.medium {
+  background: rgba(255, 193, 7, 0.2);
+  color: #ffc107;
+  border: 1px solid #ffc107;
+}
+
+.confidence-badge.low {
+  background: rgba(255, 107, 53, 0.2);
+  color: #ff6b35;
+  border: 1px solid #ff6b35;
+}
+
+.confidence-badge.very_low {
+  background: rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  border: 1px solid #ef4444;
+}
+
+/* Similarity Metrics Container */
+.similarity-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.confidence-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+}
+
+.confidence-label {
+  color: #a0aec0;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+/* Confidence Score Display in Results */
+.metric-value.confidence-score {
+  color: #00ff88;
+  font-weight: 700;
+  font-size: 1.1rem;
 }
