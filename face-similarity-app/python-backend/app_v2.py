@@ -4,7 +4,6 @@ Admin (with OTP) and Officer roles + DeepFace Integration
 """
 
 import os
-import tempfile
 import json
 import traceback
 import io
@@ -12,6 +11,7 @@ import cv2
 import numpy as np
 import hashlib
 import time
+import uuid
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from deepface import DeepFace
@@ -36,6 +36,57 @@ from datetime import datetime
 app = Flask(__name__)
 CORS(app)
 
+# ============================================================================
+# TEMP UPLOADS FOLDER SETUP
+# ============================================================================
+
+# Create dedicated temp_uploads folder in project directory
+TEMP_UPLOADS_DIR = os.path.join(os.path.dirname(__file__), 'temp_uploads')
+os.makedirs(TEMP_UPLOADS_DIR, exist_ok=True)
+
+def generate_temp_filepath(original_filename: str = None, prefix: str = '') -> str:
+    """
+    Generate a unique filepath in temp_uploads folder
+    
+    Args:
+        original_filename: Original filename (optional, for extension)
+        prefix: Prefix for the filename (e.g., 'sketch', 'photo', 'preprocessed')
+    
+    Returns:
+        str: Full path to temp file
+    """
+    unique_id = str(uuid.uuid4())
+    
+    # Extract extension from original filename if provided
+    if original_filename:
+        _, ext = os.path.splitext(original_filename)
+        if not ext:
+            ext = '.jpg'
+    else:
+        ext = '.jpg'
+    
+    # Build filename
+    if prefix:
+        filename = f"{prefix}_{unique_id}{ext}"
+    else:
+        filename = f"{unique_id}{ext}"
+    
+    return os.path.join(TEMP_UPLOADS_DIR, filename)
+
+
+def cleanup_temp_file(filepath: str):
+    """
+    Safely delete a temp file
+    
+    Args:
+        filepath: Path to file to delete
+    """
+    try:
+        if filepath and os.path.exists(filepath):
+            os.remove(filepath)
+    except Exception as e:
+        print(f"[WARNING] Failed to cleanup temp file {filepath}: {e}")
+
 # Create database tables
 create_tables()
 
@@ -46,6 +97,10 @@ create_tables()
 MODEL_INITIALIZED = False
 RESULT_CACHE = {}
 CACHE_MAX_SIZE = 100
+
+# Precomputed embeddings cache
+EMBEDDING_CACHE = {}  # {criminal_id: embedding_vector}
+EMBEDDING_VERSION = "arcface_v1"  # Track embedding model version
 
 
 # ============================================================================
@@ -65,7 +120,7 @@ def initialize_models():
     try:
         # Create a dummy image to trigger model loading
         dummy_img = np.ones((224, 224, 3), dtype=np.uint8) * 128
-        dummy_path = tempfile.mktemp(suffix='.jpg')
+        dummy_path = generate_temp_filepath(prefix='dummy_init')
         cv2.imwrite(dummy_path, dummy_img)
         
         try:
@@ -83,10 +138,7 @@ def initialize_models():
             print(f"Warning during model initialization: {e}")
         
         finally:
-            try:
-                os.remove(dummy_path)
-            except:
-                pass
+            cleanup_temp_file(dummy_path)
         
         MODEL_INITIALIZED = True
         print("=" * 60)
@@ -105,6 +157,245 @@ def get_file_hash(file_path: str) -> str:
             return hashlib.md5(f.read()).hexdigest()
     except:
         return None
+
+
+def extract_embedding(image_path: str) -> np.ndarray:
+    """
+    Extract ArcFace embedding from image
+    
+    Returns:
+        np.ndarray: 512-dimensional embedding vector, or None if extraction fails
+    """
+    try:
+        # Validate input file exists
+        if not os.path.exists(image_path):
+            print(f"[ERROR] Input image does not exist: {image_path}")
+            return None
+        
+        # Validate file can be read by cv2
+        test_img = cv2.imread(image_path)
+        if test_img is None:
+            print(f"[ERROR] cv2.imread() failed - image is corrupted or invalid: {image_path}")
+            return None
+        
+        # Preprocess image
+        processed_path = preprocess_for_cross_domain_matching(image_path, is_sketch=False)
+        
+        # Validate preprocessing succeeded
+        if processed_path is None:
+            print(f"[ERROR] Preprocessing failed for: {image_path}")
+            return None
+        
+        # Validate preprocessed file exists
+        if not os.path.exists(processed_path):
+            print(f"[ERROR] Preprocessed file does not exist: {processed_path}")
+            return None
+        
+        # Validate preprocessed file can be read
+        test_processed = cv2.imread(processed_path)
+        if test_processed is None:
+            print(f"[ERROR] cv2.imread() failed on preprocessed file: {processed_path}")
+            cleanup_temp_file(processed_path)
+            return None
+        
+        # Extract embedding
+        result = DeepFace.represent(
+            img_path=processed_path,
+            model_name='ArcFace',
+            enforce_detection=True,
+            align=True,
+            detector_backend='opencv'
+        )
+        
+        embedding = np.array(result[0]['embedding'])
+        
+        # Cleanup
+        if processed_path != image_path:
+            cleanup_temp_file(processed_path)
+        
+        return embedding
+        
+    except Exception as e:
+        print(f"[ERROR] Embedding extraction failed: {e}")
+        traceback.print_exc()
+        return None
+
+
+def compute_geometric_similarity(img1_path: str, img2_path: str) -> float:
+    """
+    Lightweight geometric scoring based on facial landmarks
+    
+    Returns:
+        float: Geometric similarity score (0-1)
+    """
+    try:
+        # Read images
+        img1 = cv2.imread(img1_path)
+        img2 = cv2.imread(img2_path)
+        
+        if img1 is None or img2 is None:
+            return 0.5  # Neutral score if can't read
+        
+        # Convert to grayscale
+        gray1 = cv2.cvtColor(img1, cv2.COLOR_BGR2GRAY)
+        gray2 = cv2.cvtColor(img2, cv2.COLOR_BGR2GRAY)
+        
+        # Detect faces using Haar Cascade (lightweight)
+        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+        
+        faces1 = face_cascade.detectMultiScale(gray1, 1.1, 4)
+        faces2 = face_cascade.detectMultiScale(gray2, 1.1, 4)
+        
+        if len(faces1) == 0 or len(faces2) == 0:
+            return 0.5  # Neutral score if no face detected
+        
+        # Get largest face (assume it's the main face)
+        face1 = max(faces1, key=lambda f: f[2] * f[3])  # (x, y, w, h)
+        face2 = max(faces2, key=lambda f: f[2] * f[3])
+        
+        # Extract face regions
+        x1, y1, w1, h1 = face1
+        x2, y2, w2, h2 = face2
+        
+        # Compute aspect ratio similarity
+        aspect1 = w1 / h1 if h1 > 0 else 1.0
+        aspect2 = w2 / h2 if h2 > 0 else 1.0
+        aspect_similarity = 1.0 - abs(aspect1 - aspect2) / max(aspect1, aspect2)
+        
+        # Compute size similarity (normalized)
+        size1 = w1 * h1
+        size2 = w2 * h2
+        size_similarity = min(size1, size2) / max(size1, size2) if max(size1, size2) > 0 else 0.5
+        
+        # Compute position similarity (center of face)
+        center1_x = x1 + w1 / 2
+        center1_y = y1 + h1 / 2
+        center2_x = x2 + w2 / 2
+        center2_y = y2 + h2 / 2
+        
+        # Normalize by image size
+        h_img1, w_img1 = gray1.shape
+        h_img2, w_img2 = gray2.shape
+        
+        center1_x_norm = center1_x / w_img1 if w_img1 > 0 else 0.5
+        center1_y_norm = center1_y / h_img1 if h_img1 > 0 else 0.5
+        center2_x_norm = center2_x / w_img2 if w_img2 > 0 else 0.5
+        center2_y_norm = center2_y / h_img2 if h_img2 > 0 else 0.5
+        
+        position_similarity = 1.0 - (abs(center1_x_norm - center2_x_norm) + abs(center1_y_norm - center2_y_norm)) / 2.0
+        
+        # Weighted combination
+        geometric_score = (
+            0.4 * aspect_similarity +
+            0.3 * size_similarity +
+            0.3 * position_similarity
+        )
+        
+        return max(0.0, min(1.0, geometric_score))
+        
+    except Exception as e:
+        print(f"[WARNING] Geometric scoring failed: {e}")
+        return 0.5  # Neutral score on error
+
+
+def precompute_database_embeddings():
+    """
+    Precompute and cache embeddings for all criminals in database
+    Called at startup
+    """
+    global EMBEDDING_CACHE
+    
+    print("\n" + "="*60)
+    print("PRECOMPUTING DATABASE EMBEDDINGS")
+    print("="*60)
+    
+    db = next(get_db())
+    try:
+        criminals = db.query(Criminal).all()
+        print(f"Found {len(criminals)} criminals in database")
+        
+        updated_count = 0
+        cached_count = 0
+        failed_count = 0
+        
+        for criminal in criminals:
+            try:
+                # Check if embedding already exists and is current version
+                if criminal.face_embedding and criminal.embedding_version == EMBEDDING_VERSION:
+                    # Load from database
+                    embedding = np.array(criminal.face_embedding)
+                    EMBEDDING_CACHE[criminal.criminal_id] = embedding
+                    cached_count += 1
+                    print(f"  [OK] Loaded cached embedding for {criminal.criminal_id}")
+                else:
+                    # Compute new embedding
+                    print(f"  Computing embedding for {criminal.criminal_id}...")
+                    
+                    # Validate photo data exists
+                    if not criminal.photo_data:
+                        print(f"  [ERROR] No photo data for {criminal.criminal_id}")
+                        failed_count += 1
+                        continue
+                    
+                    # Save photo to temp_uploads folder
+                    temp_path = generate_temp_filepath(original_filename=criminal.photo_filename or 'criminal.jpg', prefix='criminal')
+                    try:
+                        with open(temp_path, 'wb') as f:
+                            f.write(criminal.photo_data)
+                        
+                        # Validate temp file was created
+                        if not os.path.exists(temp_path):
+                            print(f"  [ERROR] Failed to create temp file for {criminal.criminal_id}")
+                            failed_count += 1
+                            continue
+                        
+                        # Validate file can be read by cv2
+                        test_img = cv2.imread(temp_path)
+                        if test_img is None:
+                            print(f"  [ERROR] cv2.imread() failed - photo data is corrupted for {criminal.criminal_id}")
+                            failed_count += 1
+                            cleanup_temp_file(temp_path)
+                            continue
+                        
+                        # Extract embedding
+                        embedding = extract_embedding(temp_path)
+                        
+                        if embedding is not None:
+                            # Store in cache
+                            EMBEDDING_CACHE[criminal.criminal_id] = embedding
+                            
+                            # Update database
+                            criminal.face_embedding = embedding.tolist()
+                            criminal.embedding_version = EMBEDDING_VERSION
+                            db.commit()
+                            
+                            updated_count += 1
+                            print(f"  [OK] Computed and stored embedding for {criminal.criminal_id}")
+                        else:
+                            print(f"  [ERROR] Failed to compute embedding for {criminal.criminal_id}")
+                            failed_count += 1
+                    
+                    finally:
+                        # Cleanup temp file
+                        cleanup_temp_file(temp_path)
+                        
+            except Exception as e:
+                print(f"  [ERROR] Error processing {criminal.criminal_id}: {e}")
+                failed_count += 1
+                continue
+        
+        print(f"\n[SUMMARY]")
+        print(f"  Cached embeddings: {cached_count}")
+        print(f"  Newly computed: {updated_count}")
+        print(f"  Failed: {failed_count}")
+        print(f"  Total in cache: {len(EMBEDDING_CACHE)}")
+        print("="*60 + "\n")
+        
+    except Exception as e:
+        print(f"[ERROR] Precomputation failed: {e}")
+        traceback.print_exc()
+    finally:
+        db.close()
 
 
 # ============================================================================
@@ -144,7 +435,7 @@ def preprocess_for_edge_based_matching(image_path: str, is_sketch: bool = False)
         
         if not is_sketch:
             # PHOTO PREPROCESSING: Convert to sketch-like representation
-            print("  [STEP 2] Photo → Edge extraction (sketch-like)")
+            print("  [STEP 2] Photo -> Edge extraction (sketch-like)")
             
             # 1. Reduce noise while preserving edges
             gray = cv2.bilateralFilter(gray, 9, 75, 75)
@@ -161,7 +452,7 @@ def preprocess_for_edge_based_matching(image_path: str, is_sketch: bool = False)
             
         else:
             # SKETCH PREPROCESSING: Minimal enhancement
-            print("  [STEP 2] Sketch → Minimal enhancement")
+            print("  [STEP 2] Sketch -> Minimal enhancement")
             
             # Just apply histogram equalization for consistent brightness
             result = cv2.equalizeHist(gray)
@@ -169,10 +460,10 @@ def preprocess_for_edge_based_matching(image_path: str, is_sketch: bool = False)
         # Convert back to BGR for DeepFace compatibility
         result_bgr = cv2.cvtColor(result, cv2.COLOR_GRAY2BGR)
         
-        # Save with deterministic filename
+        # Save to temp_uploads folder with deterministic filename
         file_hash = hashlib.md5(image_path.encode()).hexdigest()[:8]
         mode = "sketch" if is_sketch else "photo"
-        processed_path = os.path.join(tempfile.gettempdir(), f'edge_{mode}_{file_hash}.jpg')
+        processed_path = generate_temp_filepath(prefix=f'edge_{mode}_{file_hash}')
         cv2.imwrite(processed_path, result_bgr, [cv2.IMWRITE_JPEG_QUALITY, 95])
         
         return processed_path
@@ -269,83 +560,218 @@ def compare_with_edge_preprocessing(sketch_path: str, photo_path: str) -> dict:
 # - /api/criminals/search endpoint
 # ============================================================================
 
-def preprocess_for_cross_domain_matching(image_path: str, is_sketch: bool = False) -> str:
+def preprocess_for_cross_domain_matching(image_path: str, is_sketch: bool = False, 
+                                         canny_threshold: tuple = None) -> str:
     """
-    Cross-domain preprocessing for sketch-to-photo matching
+    EDGE-BASED: Preprocessing to reduce sketch-to-photo domain gap
     
     **USAGE:** Production endpoints (/api/compare, /api/criminals/search)
     **CALLED BY:** forensic_face_comparison()
     
-    FORENSIC APPROACH:
-    - Sketches and photos are different modalities (cross-domain problem)
-    - Reduce texture/color dependence, focus on facial structure
-    - Convert both to edge-based representations for fair comparison
+    APPROACH:
+    - For PHOTOS: Convert to grayscale → Apply Canny edge detection → Create sketch-like representation
+    - For SKETCHES: Convert to grayscale only → Keep sketch intact (no edge detection)
+    - Both: Convert to 3-channel BGR → Resize to 112x112 (ArcFace native size)
+    
+    This approach converts photos into edge-based representations to match sketches,
+    while keeping original sketches intact, reducing the domain gap.
+    
+    Args:
+        image_path: Path to image file
+        is_sketch: True if image is a sketch, False if photo
+        canny_threshold: Tuple of (threshold1, threshold2) for Canny edge detection
+                        If None, uses default (50, 150)
     
     DETERMINISTIC: All operations use fixed parameters for consistent results
     """
     try:
         img = cv2.imread(image_path)
         if img is None:
-            return image_path
+            print(f"  [ERROR] Failed to read image: {image_path}")
+            return None
         
-        # Resize to standard size for consistent processing
-        height, width = img.shape[:2]
-        target_size = 512  # Standard size for processing
+        # Use default thresholds if not specified
+        if canny_threshold is None:
+            canny_threshold = (50, 150)
         
-        if height != target_size or width != target_size:
-            # Maintain aspect ratio, pad if needed
-            scale = target_size / max(height, width)
-            new_width = int(width * scale)
-            new_height = int(height * scale)
-            img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_LANCZOS4)
-            
-            # Pad to square
-            delta_w = target_size - new_width
-            delta_h = target_size - new_height
-            top, bottom = delta_h // 2, delta_h - (delta_h // 2)
-            left, right = delta_w // 2, delta_w - (delta_w // 2)
-            img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=[255, 255, 255])
+        print(f"  [PREPROCESSING] {'Sketch' if is_sketch else 'Photo'} - Input size: {img.shape}")
         
-        # Convert to grayscale (removes color/texture dependence)
+        # STEP 1: Convert to grayscale
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        print(f"    [OK] Step 1: Converted to grayscale")
         
-        # Apply histogram equalization for consistent brightness
-        gray = cv2.equalizeHist(gray)
-        
-        # For photos: extract edges to match sketch representation
-        if not is_sketch:
-            # Apply Gaussian blur to reduce noise
-            gray = cv2.GaussianBlur(gray, (5, 5), 0)
-            
-            # Extract edges using Canny (makes photo look more like sketch)
-            edges = cv2.Canny(gray, 30, 100)
-            
-            # Invert edges (white background, black lines like sketch)
-            edges = cv2.bitwise_not(edges)
-            
-            # Blend edges with original for structure preservation
-            gray = cv2.addWeighted(gray, 0.6, edges, 0.4, 0)
-        
-        # For sketches: enhance edges
+        if is_sketch:
+            # SKETCH: Keep intact, no edge detection
+            print(f"    [OK] Step 2: Sketch - keeping original (no edge detection)")
+            processed = gray
         else:
-            # Apply bilateral filter to reduce noise while preserving edges
-            gray = cv2.bilateralFilter(gray, 9, 75, 75)
+            # PHOTO: Apply Canny edge detection to create sketch-like representation
+            edges = cv2.Canny(gray, threshold1=canny_threshold[0], threshold2=canny_threshold[1])
+            print(f"    [OK] Step 2: Photo - applied Canny edge detection with thresholds {canny_threshold}")
+            processed = edges
         
-        # Convert back to BGR for DeepFace compatibility
-        processed = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+        # STEP 3: Convert to 3-channel BGR (ArcFace expects 3 channels)
+        bgr = cv2.cvtColor(processed, cv2.COLOR_GRAY2BGR)
+        print(f"    [OK] Step 3: Converted to 3-channel BGR")
         
-        # Save with deterministic filename
+        # STEP 4: Resize to 112x112 (ArcFace native size)
+        target_size = 112
+        resized = cv2.resize(bgr, (target_size, target_size), interpolation=cv2.INTER_LANCZOS4)
+        print(f"    [OK] Step 4: Resized to {target_size}x{target_size} (ArcFace native size)")
+        print(f"    [OK] Final output: {'Sketch (intact)' if is_sketch else 'Edge-based'} representation, size {resized.shape} (ready for ArcFace)")
+        
+        # Save preprocessed image to temp_uploads folder
         file_hash = hashlib.md5(image_path.encode()).hexdigest()[:8]
         mode = "sketch" if is_sketch else "photo"
-        processed_path = os.path.join(tempfile.gettempdir(), f'forensic_{mode}_{file_hash}.jpg')
-        cv2.imwrite(processed_path, processed, [cv2.IMWRITE_JPEG_QUALITY, 95])
+        threshold_str = f"{canny_threshold[0]}_{canny_threshold[1]}"
+        processed_path = generate_temp_filepath(prefix=f'edge_preprocessed_{mode}_{threshold_str}_{file_hash}')
         
-        print(f"  Cross-domain preprocessing applied ({mode} mode)")
+        # Validate cv2.imwrite() succeeds
+        write_success = cv2.imwrite(processed_path, resized, [cv2.IMWRITE_JPEG_QUALITY, 95])
+        if not write_success:
+            print(f"  [ERROR] Failed to write preprocessed image to: {processed_path}")
+            return None
+        
+        # Validate file exists
+        if not os.path.exists(processed_path):
+            print(f"  [ERROR] Preprocessed file does not exist: {processed_path}")
+            return None
+        
+        # Validate file can be read by cv2
+        test_img = cv2.imread(processed_path)
+        if test_img is None:
+            print(f"  [ERROR] cv2.imread() failed on preprocessed file: {processed_path}")
+            cleanup_temp_file(processed_path)
+            return None
+        
+        print(f"  [PREPROCESSING] Complete - saved to: {processed_path}")
         return processed_path
         
     except Exception as e:
-        print(f"Cross-domain preprocessing warning: {e}")
-        return image_path
+        print(f"  [PREPROCESSING ERROR] {e}")
+        traceback.print_exc()
+        return None
+
+
+def preprocess_with_adaptive_canny(image_path: str, is_sketch: bool = False, 
+                                   reference_embedding: np.ndarray = None) -> tuple:
+    """
+    ADAPTIVE: Test multiple Canny thresholds and select the best one
+    
+    **USAGE:** Production endpoints when adaptive threshold selection is needed
+    
+    Tests multiple Canny threshold combinations:
+    - (30, 120) - More edges (sensitive)
+    - (50, 150) - Balanced (default)
+    - (70, 200) - Fewer edges (conservative)
+    
+    If reference_embedding is provided, selects the threshold that produces
+    the highest embedding similarity. Otherwise, returns default (50, 150).
+    
+    Args:
+        image_path: Path to image file
+        is_sketch: True if image is a sketch, False if photo
+        reference_embedding: Reference embedding to compare against (optional)
+    
+    Returns:
+        tuple: (best_preprocessed_path, best_threshold, threshold_results)
+    """
+    # Threshold combinations to test
+    threshold_combinations = [
+        (30, 120),  # More edges (sensitive)
+        (50, 150),  # Balanced (default)
+        (70, 200)   # Fewer edges (conservative)
+    ]
+    
+    print(f"\n[ADAPTIVE CANNY] Testing {len(threshold_combinations)} threshold combinations...")
+    
+    # If no reference embedding, just use default
+    if reference_embedding is None or is_sketch:
+        print(f"  No reference embedding or is sketch - using default (50, 150)")
+        best_path = preprocess_for_cross_domain_matching(image_path, is_sketch, (50, 150))
+        return best_path, (50, 150), None
+    
+    threshold_results = []
+    temp_paths = []
+    
+    try:
+        # Test each threshold combination
+        for threshold in threshold_combinations:
+            print(f"\n  Testing threshold {threshold}...")
+            
+            # Preprocess with this threshold
+            processed_path = preprocess_for_cross_domain_matching(
+                image_path, 
+                is_sketch=is_sketch, 
+                canny_threshold=threshold
+            )
+            
+            if processed_path is None:
+                print(f"    [ERROR] Preprocessing failed for threshold {threshold}")
+                continue
+            
+            temp_paths.append(processed_path)
+            
+            # Extract embedding
+            try:
+                result = DeepFace.represent(
+                    img_path=processed_path,
+                    model_name='ArcFace',
+                    enforce_detection=True,
+                    align=True,
+                    detector_backend='opencv'
+                )
+                embedding = np.array(result[0]['embedding'])
+                
+                # Compute similarity with reference embedding
+                dot_product = np.dot(embedding, reference_embedding)
+                norm1 = np.linalg.norm(embedding)
+                norm2 = np.linalg.norm(reference_embedding)
+                similarity = dot_product / (norm1 * norm2)
+                
+                threshold_results.append({
+                    'threshold': threshold,
+                    'similarity': float(similarity),
+                    'path': processed_path
+                })
+                
+                print(f"    Similarity: {similarity:.4f} ({similarity*100:.1f}%)")
+                
+            except Exception as e:
+                print(f"    [ERROR] Embedding extraction failed: {e}")
+                continue
+        
+        # Select best threshold based on highest similarity
+        if len(threshold_results) > 0:
+            best_result = max(threshold_results, key=lambda x: x['similarity'])
+            best_threshold = best_result['threshold']
+            best_path = best_result['path']
+            best_similarity = best_result['similarity']
+            
+            print(f"\n  [BEST THRESHOLD] {best_threshold} with similarity {best_similarity:.4f} ({best_similarity*100:.1f}%)")
+            
+            # Cleanup non-selected preprocessed images
+            for result in threshold_results:
+                if result['path'] != best_path:
+                    cleanup_temp_file(result['path'])
+            
+            return best_path, best_threshold, threshold_results
+        else:
+            print(f"  [ERROR] All thresholds failed, using default")
+            best_path = preprocess_for_cross_domain_matching(image_path, is_sketch, (50, 150))
+            return best_path, (50, 150), None
+            
+    except Exception as e:
+        print(f"  [ADAPTIVE CANNY ERROR] {e}")
+        traceback.print_exc()
+        
+        # Cleanup all temp files
+        for path in temp_paths:
+            cleanup_temp_file(path)
+        
+        # Fallback to default
+        best_path = preprocess_for_cross_domain_matching(image_path, is_sketch, (50, 150))
+        return best_path, (50, 150), None
 
 
 def is_sketch_image(image_path: str) -> bool:
@@ -402,18 +828,38 @@ def is_sketch_image(image_path: str) -> bool:
 # - /api/criminals/search (database search)
 # ============================================================================
 
-def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool = True) -> dict:
+def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool = True, 
+                            use_adaptive_canny: bool = True) -> dict:
     """
-    Forensic-grade face comparison for sketch-to-photo matching
+    HYBRID: Forensic-grade face comparison with hybrid scoring
     
     **USAGE:** Production endpoints (/api/compare, /api/criminals/search)
     **PREPROCESSING:** Uses preprocess_for_cross_domain_matching()
     
-    CROSS-DOMAIN APPROACH:
-    - Treats sketch and photo as different modalities
-    - Applies domain-bridging preprocessing
-    - Provides realistic confidence levels
-    - Returns ranked results, not binary decisions
+    HYBRID SCORING:
+    - 80% ArcFace embedding similarity (deep features)
+    - 20% Geometric similarity (facial structure)
+    - Final score = 0.8 * embedding + 0.2 * geometry
+    
+    ADAPTIVE CANNY:
+    - Tests multiple Canny thresholds: (30,120), (50,150), (70,200)
+    - Automatically selects the threshold with highest embedding similarity
+    - Only applied for cross-domain (sketch-to-photo) comparisons
+    
+    IMPROVEMENTS:
+    - Uses DeepFace.represent() for direct embedding extraction
+    - Manual cosine similarity computation
+    - Lightweight geometric scoring component
+    - Ranked similarity categories (HIGH/MEDIUM/LOW)
+    - No binary match logic
+    - Deterministic results
+    - Enhanced debug logging
+    
+    Args:
+        sketch_path: Path to sketch/query image
+        photo_path: Path to photo/reference image
+        use_cache: Whether to use result caching
+        use_adaptive_canny: Whether to use adaptive Canny threshold selection (default: True)
     
     DETERMINISTIC: All operations use fixed parameters for consistent results
     """
@@ -424,7 +870,7 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
     
     start_time = time.time()
     print(f"\n{'='*60}")
-    print("FORENSIC FACE COMPARISON")
+    print("FORENSIC FACE COMPARISON - HYBRID SCORING")
     print(f"{'='*60}")
     print(f"  Query Image: {os.path.basename(sketch_path)}")
     print(f"  Reference Image: {os.path.basename(photo_path)}")
@@ -447,7 +893,7 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
         hash1 = get_file_hash(sketch_path)
         hash2 = get_file_hash(photo_path)
         if hash1 and hash2:
-            cache_key = f"{hash1}_{hash2}_{is_img1_sketch}_{is_img2_sketch}"
+            cache_key = f"{hash1}_{hash2}_{is_img1_sketch}_{is_img2_sketch}_hybrid_v1"
             if cache_key in RESULT_CACHE:
                 cached_result = RESULT_CACHE[cache_key].copy()
                 cached_result['from_cache'] = True
@@ -460,98 +906,334 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
     processed_img2 = None
     
     try:
-        # Apply cross-domain preprocessing
-        print(f"[PREPROCESSING] Applying cross-domain preprocessing...")
-        processed_img1 = preprocess_for_cross_domain_matching(sketch_path, is_sketch=is_img1_sketch)
-        processed_img2 = preprocess_for_cross_domain_matching(photo_path, is_sketch=is_img2_sketch)
+        # ADAPTIVE CANNY: For cross-domain comparisons, use adaptive threshold selection
+        # This tests multiple Canny thresholds and selects the best one
+        use_adaptive = is_cross_domain and use_adaptive_canny
         
-        # Use DeepFace.verify with ArcFace model
-        print(f"[MATCHING] Running ArcFace model...")
-        result = DeepFace.verify(
-            img1_path=processed_img1,
-            img2_path=processed_img2,
-            model_name='ArcFace',
-            distance_metric='cosine',
-            enforce_detection=False,
-            align=True
-        )
-        
-        # Extract results
-        distance = float(result['distance'])
-        model_threshold = float(result['threshold'])
-        
-        # Calculate similarity score (0-1 range)
-        similarity = max(0.0, min(1.0, 1.0 - distance))
-        
-        # Forensic confidence assessment
-        # Cross-domain matching has inherently lower confidence
-        if is_cross_domain:
-            # Sketch-to-photo: realistic confidence levels
-            if distance <= 0.30:
-                confidence_level = 'possible_match'
-                confidence_score = 75.0
-                match_quality = 'Strong candidate - requires verification'
-            elif distance <= 0.45:
-                confidence_level = 'weak_match'
-                confidence_score = 55.0
-                match_quality = 'Weak candidate - low confidence'
-            elif distance <= 0.60:
-                confidence_level = 'uncertain'
-                confidence_score = 35.0
-                match_quality = 'Uncertain - insufficient similarity'
-            else:
-                confidence_level = 'unlikely'
-                confidence_score = 15.0
-                match_quality = 'Unlikely match'
+        if use_adaptive:
+            print(f"[PREPROCESSING] Using ADAPTIVE Canny threshold selection...")
+            
+            # First, preprocess the sketch (no adaptive needed for sketches)
+            processed_img1 = preprocess_for_cross_domain_matching(sketch_path, is_sketch=is_img1_sketch)
+            
+            if processed_img1 is None:
+                return {
+                    'distance': 1.0,
+                    'similarity': 0.0,
+                    'embedding_similarity': 0.0,
+                    'geometric_similarity': 0.0,
+                    'similarity_category': 'ERROR',
+                    'confidence_level': 'error',
+                    'confidence_score': 0.0,
+                    'match_quality': 'Preprocessing failed for image 1',
+                    'is_cross_domain': is_cross_domain,
+                    'comparison_type': 'error',
+                    'model_used': 'failed',
+                    'metric_used': 'none',
+                    'embedding_length': 0,
+                    'embedding_norm_1': 0.0,
+                    'embedding_norm_2': 0.0,
+                    'processing_time': round(time.time() - start_time, 3),
+                    'error': 'Preprocessing failed for image 1',
+                    'from_cache': False,
+                    'forensic_note': 'Preprocessing failed - unable to process image 1.'
+                }
+            
+            # Extract sketch embedding (reference for adaptive selection)
+            print(f"  Extracting reference embedding from sketch...")
+            embedding1_result = DeepFace.represent(
+                img_path=processed_img1,
+                model_name='ArcFace',
+                enforce_detection=True,
+                align=True,
+                detector_backend='opencv'
+            )
+            embedding1 = np.array(embedding1_result[0]['embedding'])
+            
+            # Use adaptive Canny for the photo
+            processed_img2, best_threshold, threshold_results = preprocess_with_adaptive_canny(
+                photo_path, 
+                is_sketch=is_img2_sketch,
+                reference_embedding=embedding1
+            )
+            
+            if processed_img2 is None:
+                return {
+                    'distance': 1.0,
+                    'similarity': 0.0,
+                    'embedding_similarity': 0.0,
+                    'geometric_similarity': 0.0,
+                    'similarity_category': 'ERROR',
+                    'confidence_level': 'error',
+                    'confidence_score': 0.0,
+                    'match_quality': 'Adaptive preprocessing failed for image 2',
+                    'is_cross_domain': is_cross_domain,
+                    'comparison_type': 'error',
+                    'model_used': 'failed',
+                    'metric_used': 'none',
+                    'embedding_length': 0,
+                    'embedding_norm_1': 0.0,
+                    'embedding_norm_2': 0.0,
+                    'processing_time': round(time.time() - start_time, 3),
+                    'error': 'Adaptive preprocessing failed for image 2',
+                    'from_cache': False,
+                    'forensic_note': 'Adaptive preprocessing failed - unable to process image 2.'
+                }
+            
+            # Extract embedding for image 2 (already done in adaptive selection, but re-extract for consistency)
+            print(f"  Extracting final embedding 2 with best threshold {best_threshold}...")
+            embedding2_result = DeepFace.represent(
+                img_path=processed_img2,
+                model_name='ArcFace',
+                enforce_detection=True,
+                align=True,
+                detector_backend='opencv'
+            )
+            embedding2 = np.array(embedding2_result[0]['embedding'])
+            
+            adaptive_info = {
+                'used': True,
+                'best_threshold': best_threshold,
+                'tested_thresholds': [r['threshold'] for r in threshold_results] if threshold_results else [],
+                'threshold_similarities': {str(r['threshold']): r['similarity'] for r in threshold_results} if threshold_results else {}
+            }
+            
         else:
-            # Same-domain (photo-to-photo): higher confidence possible
-            if distance <= model_threshold * 0.5:
-                confidence_level = 'high'
-                confidence_score = 95.0
-                match_quality = 'Strong match'
-            elif distance <= model_threshold * 0.7:
-                confidence_level = 'medium'
-                confidence_score = 80.0
-                match_quality = 'Good match'
-            elif distance <= model_threshold:
-                confidence_level = 'low'
-                confidence_score = 60.0
-                match_quality = 'Weak match'
-            else:
-                confidence_level = 'very_low'
-                confidence_score = 30.0
-                match_quality = 'Poor match'
+            # Standard preprocessing without adaptive selection
+            print(f"[PREPROCESSING] Applying standard preprocessing to both images...")
+            processed_img1 = preprocess_for_cross_domain_matching(sketch_path, is_sketch=is_img1_sketch)
+            processed_img2 = preprocess_for_cross_domain_matching(photo_path, is_sketch=is_img2_sketch)
+            
+            # Validate preprocessing succeeded
+            if processed_img1 is None:
+                return {
+                    'distance': 1.0,
+                    'similarity': 0.0,
+                    'embedding_similarity': 0.0,
+                    'geometric_similarity': 0.0,
+                    'similarity_category': 'ERROR',
+                    'confidence_level': 'error',
+                    'confidence_score': 0.0,
+                    'match_quality': 'Preprocessing failed for image 1',
+                    'is_cross_domain': is_cross_domain,
+                    'comparison_type': 'error',
+                    'model_used': 'failed',
+                    'metric_used': 'none',
+                    'embedding_length': 0,
+                    'embedding_norm_1': 0.0,
+                    'embedding_norm_2': 0.0,
+                    'processing_time': round(time.time() - start_time, 3),
+                    'error': 'Preprocessing failed for image 1',
+                    'from_cache': False,
+                    'forensic_note': 'Preprocessing failed - unable to process image 1.'
+                }
+            
+            if processed_img2 is None:
+                return {
+                    'distance': 1.0,
+                    'similarity': 0.0,
+                    'embedding_similarity': 0.0,
+                    'geometric_similarity': 0.0,
+                    'similarity_category': 'ERROR',
+                    'confidence_level': 'error',
+                    'confidence_score': 0.0,
+                    'match_quality': 'Preprocessing failed for image 2',
+                    'is_cross_domain': is_cross_domain,
+                    'comparison_type': 'error',
+                    'model_used': 'failed',
+                    'metric_used': 'none',
+                    'embedding_length': 0,
+                    'embedding_norm_1': 0.0,
+                    'embedding_norm_2': 0.0,
+                    'processing_time': round(time.time() - start_time, 3),
+                    'error': 'Preprocessing failed for image 2',
+                    'from_cache': False,
+                    'forensic_note': 'Preprocessing failed - unable to process image 2.'
+                }
+            
+            # Validate preprocessed files exist
+            if not os.path.exists(processed_img1):
+                return {
+                    'distance': 1.0,
+                    'similarity': 0.0,
+                    'embedding_similarity': 0.0,
+                    'geometric_similarity': 0.0,
+                    'similarity_category': 'ERROR',
+                    'confidence_level': 'error',
+                    'confidence_score': 0.0,
+                    'match_quality': 'Preprocessed file 1 does not exist',
+                    'is_cross_domain': is_cross_domain,
+                    'comparison_type': 'error',
+                    'model_used': 'failed',
+                    'metric_used': 'none',
+                    'embedding_length': 0,
+                    'embedding_norm_1': 0.0,
+                    'embedding_norm_2': 0.0,
+                    'processing_time': round(time.time() - start_time, 3),
+                    'error': 'Preprocessed file 1 does not exist',
+                    'from_cache': False,
+                    'forensic_note': 'File validation failed.'
+                }
+            
+            if not os.path.exists(processed_img2):
+                return {
+                    'distance': 1.0,
+                    'similarity': 0.0,
+                    'embedding_similarity': 0.0,
+                    'geometric_similarity': 0.0,
+                    'similarity_category': 'ERROR',
+                    'confidence_level': 'error',
+                    'confidence_score': 0.0,
+                    'match_quality': 'Preprocessed file 2 does not exist',
+                    'is_cross_domain': is_cross_domain,
+                    'comparison_type': 'error',
+                    'model_used': 'failed',
+                    'metric_used': 'none',
+                    'embedding_length': 0,
+                    'embedding_norm_1': 0.0,
+                    'embedding_norm_2': 0.0,
+                    'processing_time': round(time.time() - start_time, 3),
+                    'error': 'Preprocessed file 2 does not exist',
+                    'from_cache': False,
+                    'forensic_note': 'File validation failed.'
+                }
+            
+            # Extract embeddings using DeepFace.represent()
+            print(f"\n[EMBEDDING EXTRACTION] Extracting ArcFace embeddings...")
+            
+            # Extract embedding for image 1
+            print(f"  Extracting embedding 1...")
+            embedding1_result = DeepFace.represent(
+                img_path=processed_img1,
+                model_name='ArcFace',
+                enforce_detection=True,  # Enable face detection
+                align=True,              # Enable face alignment
+                detector_backend='opencv'
+            )
+            embedding1 = np.array(embedding1_result[0]['embedding'])
+            
+            # Extract embedding for image 2
+            print(f"  Extracting embedding 2...")
+            embedding2_result = DeepFace.represent(
+                img_path=processed_img2,
+                model_name='ArcFace',
+                enforce_detection=True,  # Enable face detection
+                align=True,              # Enable face alignment
+                detector_backend='opencv'
+            )
+            embedding2 = np.array(embedding2_result[0]['embedding'])
+            
+            adaptive_info = {'used': False}
         
-        # Model's binary decision (for reference only)
-        model_verified = bool(result['verified'])
+        # Log embedding details
+        print(f"\n[EMBEDDING DETAILS]")
+        print(f"  Embedding 1 length: {len(embedding1)}")
+        print(f"  Embedding 2 length: {len(embedding2)}")
+        print(f"  Embedding 1 norm (L2): {np.linalg.norm(embedding1):.6f}")
+        print(f"  Embedding 2 norm (L2): {np.linalg.norm(embedding2):.6f}")
+        
+        # Compute cosine similarity manually
+        print(f"\n[EMBEDDING SIMILARITY]")
+        dot_product = np.dot(embedding1, embedding2)
+        norm1 = np.linalg.norm(embedding1)
+        norm2 = np.linalg.norm(embedding2)
+        
+        # Cosine similarity = dot(A, B) / (||A|| * ||B||)
+        embedding_similarity = dot_product / (norm1 * norm2)
+        
+        print(f"  Dot product: {dot_product:.6f}")
+        print(f"  Norm 1 x Norm 2: {(norm1 * norm2):.6f}")
+        print(f"  Embedding similarity (cosine): {embedding_similarity:.6f} ({embedding_similarity*100:.2f}%)")
+        
+        # Compute geometric similarity
+        print(f"\n[GEOMETRIC SIMILARITY]")
+        geometric_similarity = compute_geometric_similarity(sketch_path, photo_path)
+        print(f"  Geometric similarity: {geometric_similarity:.6f} ({geometric_similarity*100:.2f}%)")
+        
+        # Hybrid score: 80% embedding + 20% geometry
+        print(f"\n[HYBRID SCORING]")
+        hybrid_similarity = 0.8 * embedding_similarity + 0.2 * geometric_similarity
+        hybrid_distance = 1.0 - hybrid_similarity
+        
+        print(f"  Embedding weight: 80%")
+        print(f"  Geometric weight: 20%")
+        print(f"  Hybrid similarity: {hybrid_similarity:.6f} ({hybrid_similarity*100:.2f}%)")
+        print(f"  Hybrid distance: {hybrid_distance:.6f}")
+        
+        # Determine similarity category based on hybrid similarity
+        print(f"\n[ANALYSIS]")
+        print(f"  Comparison type: {comparison_type}")
+        print(f"  Final hybrid similarity: {hybrid_similarity:.6f} ({hybrid_similarity*100:.2f}%)")
+        
+        if is_cross_domain:
+            # Cross-domain (sketch-to-photo) thresholds
+            if hybrid_similarity > 0.60:
+                similarity_category = 'HIGH'
+                confidence_level = 'high_similarity'
+                confidence_score = 85.0
+                match_quality = 'High Similarity - Strong candidate for investigation'
+            elif hybrid_similarity >= 0.50:
+                similarity_category = 'MEDIUM'
+                confidence_level = 'medium_similarity'
+                confidence_score = 65.0
+                match_quality = 'Medium Similarity - Possible match, requires verification'
+            else:
+                similarity_category = 'LOW'
+                confidence_level = 'low_similarity'
+                confidence_score = 35.0
+                match_quality = 'Low Similarity - Unlikely match'
+        else:
+            # Same-domain (photo-to-photo) thresholds
+            if hybrid_similarity > 0.70:
+                similarity_category = 'HIGH'
+                confidence_level = 'high_similarity'
+                confidence_score = 95.0
+                match_quality = 'High Similarity - Strong match'
+            elif hybrid_similarity >= 0.60:
+                similarity_category = 'MEDIUM'
+                confidence_level = 'medium_similarity'
+                confidence_score = 80.0
+                match_quality = 'Medium Similarity - Good match'
+            else:
+                similarity_category = 'LOW'
+                confidence_level = 'low_similarity'
+                confidence_score = 50.0
+                match_quality = 'Low Similarity - Weak match'
         
         elapsed_time = time.time() - start_time
         
-        print(f"[RESULTS]")
-        print(f"  Distance: {distance:.4f}")
-        print(f"  Similarity: {similarity:.4f} ({similarity*100:.1f}%)")
-        print(f"  Confidence: {confidence_level} ({confidence_score:.1f}%)")
-        print(f"  Quality: {match_quality}")
-        print(f"  Model threshold: {model_threshold:.4f}")
-        print(f"  Model decision: {'Match' if model_verified else 'No match'}")
+        print(f"\n[RESULTS]")
+        print(f"  Embedding similarity: {embedding_similarity:.4f} ({embedding_similarity*100:.1f}%)")
+        print(f"  Geometric similarity: {geometric_similarity:.4f} ({geometric_similarity*100:.1f}%)")
+        print(f"  Hybrid similarity: {hybrid_similarity:.4f} ({hybrid_similarity*100:.1f}%)")
+        print(f"  Hybrid distance: {hybrid_distance:.4f}")
+        print(f"  Similarity category: {similarity_category}")
+        print(f"  Confidence level: {confidence_level}")
+        print(f"  Confidence score: {confidence_score:.1f}%")
+        print(f"  Match quality: {match_quality}")
         print(f"  Processing time: {elapsed_time:.3f}s")
         print(f"{'='*60}\n")
         
         result_dict = {
-            'distance': float(distance),
-            'similarity': float(similarity),
+            'distance': float(hybrid_distance),
+            'similarity': float(hybrid_similarity),
+            'embedding_similarity': float(embedding_similarity),
+            'geometric_similarity': float(geometric_similarity),
+            'similarity_category': similarity_category,
             'confidence_level': confidence_level,
             'confidence_score': float(confidence_score),
             'match_quality': match_quality,
             'is_cross_domain': bool(is_cross_domain),
             'comparison_type': comparison_type,
-            'model_verified': bool(model_verified),
-            'model_threshold': float(model_threshold),
             'model_used': 'ArcFace',
-            'metric_used': 'cosine',
+            'metric_used': 'hybrid (80% embedding + 20% geometry)',
+            'embedding_length': int(len(embedding1)),
+            'embedding_norm_1': float(norm1),
+            'embedding_norm_2': float(norm2),
             'processing_time': round(elapsed_time, 3),
             'from_cache': False,
-            'forensic_note': 'Cross-domain matching has inherent limitations. Results should be used for investigation leads, not absolute identification.' if is_cross_domain else 'Same-domain comparison with higher reliability.'
+            'adaptive_canny': adaptive_info,
+            'forensic_note': 'Hybrid scoring: 80% deep features + 20% geometric. Investigation assistant - not identity confirmation.' if is_cross_domain else 'Hybrid scoring with higher reliability for same-domain comparison.'
         }
         
         # Cache the result
@@ -571,15 +1253,19 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
         return {
             'distance': 1.0,
             'similarity': 0.0,
+            'embedding_similarity': 0.0,
+            'geometric_similarity': 0.0,
+            'similarity_category': 'ERROR',
             'confidence_level': 'error',
             'confidence_score': 0.0,
             'match_quality': 'Comparison failed',
             'is_cross_domain': False,
             'comparison_type': 'error',
-            'model_verified': False,
-            'model_threshold': 0.4,
             'model_used': 'failed',
             'metric_used': 'none',
+            'embedding_length': 0,
+            'embedding_norm_1': 0.0,
+            'embedding_norm_2': 0.0,
             'processing_time': round(elapsed_time, 3),
             'error': str(e),
             'from_cache': False,
@@ -589,32 +1275,63 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
     finally:
         # Cleanup processed temporary images
         if processed_img1 and processed_img1 != sketch_path:
-            try:
-                os.remove(processed_img1)
-            except:
-                pass
+            cleanup_temp_file(processed_img1)
         if processed_img2 and processed_img2 != photo_path:
-            try:
-                os.remove(processed_img2)
-            except:
-                pass
+            cleanup_temp_file(processed_img2)
 
 
 def save_temp_file(file_storage) -> str:
-    """Save uploaded file to temporary location"""
-    fd, path = tempfile.mkstemp(suffix='_' + file_storage.filename)
-    os.close(fd)
-    file_storage.save(path)
-    return path
+    """
+    Save uploaded file to temp_uploads folder
+    
+    Args:
+        file_storage: Flask FileStorage object
+    
+    Returns:
+        str: Path to saved file
+    """
+    filepath = generate_temp_filepath(original_filename=file_storage.filename, prefix='upload')
+    file_storage.save(filepath)
+    
+    # Validate file was saved
+    if not os.path.exists(filepath):
+        raise IOError(f"Failed to save uploaded file to: {filepath}")
+    
+    # Validate file can be read by cv2
+    test_img = cv2.imread(filepath)
+    if test_img is None:
+        cleanup_temp_file(filepath)
+        raise IOError(f"Uploaded file is corrupted or invalid format: {file_storage.filename}")
+    
+    return filepath
 
 
 def save_bytes_to_temp(data: bytes, original_filename: str) -> str:
-    """Save bytes data to temporary file"""
-    fd, path = tempfile.mkstemp(suffix='_' + original_filename)
-    os.close(fd)
-    with open(path, 'wb') as f:
+    """
+    Save bytes data to temp_uploads folder
+    
+    Args:
+        data: Image data as bytes
+        original_filename: Original filename (for extension)
+    
+    Returns:
+        str: Path to saved file
+    """
+    filepath = generate_temp_filepath(original_filename=original_filename, prefix='bytes')
+    with open(filepath, 'wb') as f:
         f.write(data)
-    return path
+    
+    # Validate file was saved
+    if not os.path.exists(filepath):
+        raise IOError(f"Failed to save bytes to file: {filepath}")
+    
+    # Validate file can be read by cv2
+    test_img = cv2.imread(filepath)
+    if test_img is None:
+        cleanup_temp_file(filepath)
+        raise IOError(f"Saved bytes data is corrupted or invalid format")
+    
+    return filepath
 
 
 # ============================================================================
@@ -1334,10 +2051,10 @@ def delete_criminal(criminal_id):
 @app.route('/api/criminals/search', methods=['POST'])
 @authenticated
 def search_criminals():
-    """Search for criminals using a sketch"""
+    """Search for criminals using a sketch - OPTIMIZED with precomputed embeddings"""
     import sys
     print("\n" + "="*60, flush=True)
-    print("CRIMINAL SEARCH STARTED", flush=True)
+    print("CRIMINAL SEARCH STARTED (OPTIMIZED)", flush=True)
     print("="*60, flush=True)
     sys.stdout.flush()
     
@@ -1357,108 +2074,267 @@ def search_criminals():
         print(f"Sketch saved to: {sketch_path}")
         
         try:
+            # Extract embedding for query sketch ONCE
+            print(f"\n[QUERY EMBEDDING] Extracting embedding for sketch...")
+            query_embedding = extract_embedding(sketch_path)
+            
+            if query_embedding is None:
+                return jsonify({"error": "Failed to extract embedding from sketch"}), 400
+            
+            query_norm = np.linalg.norm(query_embedding)
+            print(f"  [OK] Query embedding extracted: length={len(query_embedding)}, norm={query_norm:.6f}")
+            
+            # Compute geometric similarity for query sketch (for hybrid scoring)
+            # We'll compute this with each criminal photo
+            
             # Get all criminals from database
             db = next(get_db())
             criminals = db.query(Criminal).all()
+            print(f"\n[DATABASE SEARCH] Comparing against {len(criminals)} criminals...")
             
             matches = []
             
-            # Compare sketch with each criminal
+            # Compare sketch embedding with each precomputed criminal embedding
             for criminal in criminals:
                 try:
-                    # Save criminal photo bytes to a temporary file
-                    criminal_photo_path = save_bytes_to_temp(
-                        criminal.photo_data,
-                        criminal.photo_filename or 'criminal.jpg'
-                    )
-                    
-                    try:
-                        # Use forensic face comparison (no cache for search to ensure fresh results)
-                        result = forensic_face_comparison(sketch_path, criminal_photo_path, use_cache=False)
+                    # Check if precomputed embedding exists in cache
+                    if criminal.criminal_id in EMBEDDING_CACHE:
+                        # Use precomputed embedding (FAST!)
+                        criminal_embedding = EMBEDDING_CACHE[criminal.criminal_id]
                         
-                        similarity_score = result.get('similarity', 0.0)
-                        distance = result.get('distance', 1.0)
-                        confidence_level = result.get('confidence_level', 'uncertain')
-                        confidence_score = result.get('confidence_score', 0.0)
-                        match_quality = result.get('match_quality', 'Unknown')
+                        # Compute embedding similarity (cosine)
+                        dot_product = np.dot(query_embedding, criminal_embedding)
+                        criminal_norm = np.linalg.norm(criminal_embedding)
+                        embedding_similarity = dot_product / (query_norm * criminal_norm)
                         
-                        # Debug logging
-                        print(f"  {criminal.full_name}: distance={distance:.4f}, similarity={similarity_score:.2f}, confidence={confidence_level}")
+                        # Compute geometric similarity
+                        # Save criminal photo to temp file for geometric scoring
+                        criminal_photo_path = save_bytes_to_temp(
+                            criminal.photo_data,
+                            criminal.photo_filename or 'criminal.jpg'
+                        )
                         
-                        # Add all matches for ranking
-                        matches.append({
-                                "criminal": {
-                                    "id": criminal.id,
-                                    "criminal_id": criminal.criminal_id,
-                                    "status": criminal.status,
-                                    "full_name": criminal.full_name,
-                                    "aliases": criminal.aliases,
-                                    "dob": criminal.dob,
-                                    "sex": criminal.sex,
-                                    "nationality": criminal.nationality,
-                                    "ethnicity": criminal.ethnicity,
-                                    "appearance": criminal.appearance,
-                                    "locations": criminal.locations,
-                                    "summary": criminal.summary,
-                                    "forensics": criminal.forensics,
-                                    "evidence": criminal.evidence,
-                                    "witness": criminal.witness,
-                                    "created_at": criminal.created_at.isoformat()
-                                },
-                                "similarity_score": float(similarity_score),
-                                "distance": float(distance),
-                                "confidence_level": confidence_level,
-                                "confidence_score": float(confidence_score),
-                                "match_quality": match_quality,
-                                "model_used": result.get('model_used', 'ArcFace'),
-                                "is_cross_domain": result.get('is_cross_domain', True)
-                            })
-                    
-                    finally:
-                        # Clean up criminal photo temp file
                         try:
-                            os.remove(criminal_photo_path)
-                        except:
-                            pass
+                            geometric_similarity = compute_geometric_similarity(sketch_path, criminal_photo_path)
+                        finally:
+                            cleanup_temp_file(criminal_photo_path)
+                        
+                        # Hybrid score: 80% embedding + 20% geometry
+                        hybrid_similarity = 0.8 * embedding_similarity + 0.2 * geometric_similarity
+                        hybrid_distance = 1.0 - hybrid_similarity
+                        
+                        # Initial category (will be recalculated after normalization)
+                        # These are just placeholders for logging
+                        if hybrid_similarity > 0.60:
+                            similarity_category = 'HIGH'
+                        elif hybrid_similarity >= 0.50:
+                            similarity_category = 'MEDIUM'
+                        else:
+                            similarity_category = 'LOW'
+                        
+                        print(f"  {criminal.full_name}: hybrid={hybrid_similarity:.4f}, emb={embedding_similarity:.4f}, geo={geometric_similarity:.4f}")
+                        
+                        # Add to matches (categories will be assigned after normalization)
+                        matches.append({
+                            "criminal": {
+                                "id": criminal.id,
+                                "criminal_id": criminal.criminal_id,
+                                "status": criminal.status,
+                                "full_name": criminal.full_name,
+                                "aliases": criminal.aliases,
+                                "dob": criminal.dob,
+                                "sex": criminal.sex,
+                                "nationality": criminal.nationality,
+                                "ethnicity": criminal.ethnicity,
+                                "appearance": criminal.appearance,
+                                "locations": criminal.locations,
+                                "summary": criminal.summary,
+                                "forensics": criminal.forensics,
+                                "evidence": criminal.evidence,
+                                "witness": criminal.witness,
+                                "created_at": criminal.created_at.isoformat()
+                            },
+                            "similarity_score": float(hybrid_similarity),
+                            "embedding_similarity": float(embedding_similarity),
+                            "geometric_similarity": float(geometric_similarity),
+                            "distance": float(hybrid_distance),
+                            "model_used": 'ArcFace',
+                            "metric_used": 'hybrid (80% embedding + 20% geometry)',
+                            "is_cross_domain": True
+                        })
+                    else:
+                        # Fallback: embedding not precomputed, skip or compute on-the-fly
+                        print(f"  [WARNING] No precomputed embedding for {criminal.criminal_id}, skipping...")
+                        continue
                             
                 except Exception as e:
-                    print(f"Error comparing with criminal {criminal.id}: {e}")
+                    print(f"  [ERROR] Error comparing with criminal {criminal.id}: {e}")
                     continue
             
             # Sort by similarity score (highest first)
             matches.sort(key=lambda x: x['similarity_score'], reverse=True)
             
-            # Return top 3 matches as ranked candidates
-            top_matches = matches[:3]
+            # ================================================================
+            # SIMILARITY DISTRIBUTION ANALYSIS
+            # ================================================================
+            # Compute statistical metrics to help investigators understand
+            # the distribution of similarities and identify standout candidates
+            # ================================================================
+            
+            distribution_stats = {}
+            
+            if len(matches) > 0:
+                similarities = [m['similarity_score'] for m in matches]
+                embedding_sims = [m['embedding_similarity'] for m in matches]
+                geometric_sims = [m['geometric_similarity'] for m in matches]
+                
+                # Compute statistics
+                mean_similarity = float(np.mean(similarities))
+                std_similarity = float(np.std(similarities))
+                min_similarity = float(np.min(similarities))
+                max_similarity = float(np.max(similarities))
+                median_similarity = float(np.median(similarities))
+                
+                distribution_stats = {
+                    "mean": mean_similarity,
+                    "std_dev": std_similarity,
+                    "min": min_similarity,
+                    "max": max_similarity,
+                    "median": median_similarity,
+                    "total_candidates": len(matches),
+                    "mean_embedding": float(np.mean(embedding_sims)),
+                    "mean_geometric": float(np.mean(geometric_sims))
+                }
+                
+                print(f"\n[SIMILARITY DISTRIBUTION]")
+                print(f"  Total candidates: {len(matches)}")
+                print(f"  Mean similarity: {mean_similarity:.4f} ({mean_similarity*100:.1f}%)")
+                print(f"  Std deviation: {std_similarity:.4f}")
+                print(f"  Range: [{min_similarity:.4f}, {max_similarity:.4f}]")
+                print(f"  Median: {median_similarity:.4f}")
+                
+                # Identify candidates significantly above average
+                # Using 1 standard deviation above mean as threshold
+                above_avg_threshold = mean_similarity + std_similarity
+                
+                for match in matches:
+                    raw_similarity = match['similarity_score']
+                    
+                    # Calculate z-score (how many std devs above/below mean)
+                    if std_similarity > 0:
+                        z_score = (raw_similarity - mean_similarity) / std_similarity
+                    else:
+                        z_score = 0.0
+                    
+                    # Determine if significantly above average
+                    is_above_average = raw_similarity > above_avg_threshold
+                    
+                    # Store analysis
+                    match['statistical_analysis'] = {
+                        "z_score": float(z_score),
+                        "above_average": bool(is_above_average),
+                        "deviation_from_mean": float(raw_similarity - mean_similarity),
+                        "percentile": float((matches.index(match) + 1) / len(matches) * 100)
+                    }
+                    
+                    # Assign category based on statistical position
+                    if z_score >= 1.5:  # 1.5+ std devs above mean
+                        match['similarity_category'] = 'HIGH'
+                        match['confidence_level'] = 'high_similarity'
+                        match['confidence_score'] = 85.0
+                        match['match_quality'] = 'Significantly above average - Strong candidate'
+                    elif z_score >= 0.5:  # 0.5-1.5 std devs above mean
+                        match['similarity_category'] = 'MEDIUM'
+                        match['confidence_level'] = 'medium_similarity'
+                        match['confidence_score'] = 65.0
+                        match['match_quality'] = 'Above average - Possible match'
+                    elif z_score >= -0.5:  # Within 0.5 std devs of mean
+                        match['similarity_category'] = 'MEDIUM'
+                        match['confidence_level'] = 'medium_similarity'
+                        match['confidence_score'] = 50.0
+                        match['match_quality'] = 'Near average - Requires verification'
+                    else:  # Below average
+                        match['similarity_category'] = 'LOW'
+                        match['confidence_level'] = 'low_similarity'
+                        match['confidence_score'] = 35.0
+                        match['match_quality'] = 'Below average - Lower priority'
+                    
+                    # Add detailed explanation for each result
+                    match['explanation'] = {
+                        "hybrid_score": {
+                            "value": float(raw_similarity),
+                            "percentage": f"{raw_similarity*100:.1f}%",
+                            "description": "Combined score: 80% embedding + 20% geometric"
+                        },
+                        "embedding_similarity": {
+                            "value": float(match['embedding_similarity']),
+                            "percentage": f"{match['embedding_similarity']*100:.1f}%",
+                            "description": "Deep feature similarity from ArcFace model",
+                            "weight": "80%"
+                        },
+                        "geometric_similarity": {
+                            "value": float(match['geometric_similarity']),
+                            "percentage": f"{match['geometric_similarity']*100:.1f}%",
+                            "description": "Facial structure and landmark similarity",
+                            "weight": "20%"
+                        },
+                        "statistical_position": {
+                            "z_score": float(z_score),
+                            "description": f"{'Above' if z_score > 0 else 'Below'} average by {abs(z_score):.2f} standard deviations"
+                        }
+                    }
+            
+            # Return top 10 matches (or fewer if less available)
+            # Allow configurable top_n via query parameter
+            top_n = int(request.form.get('top_n', 10))  # Default to 10
+            top_n = min(max(top_n, 1), 20)  # Clamp between 1 and 20
+            
+            top_matches = matches[:top_n]
             
             # Add rank to each match
             for idx, match in enumerate(top_matches, 1):
                 match['rank'] = idx
             
-            print(f"\n[OK] Search completed. Found {len(matches)} total matches, returning top {len(top_matches)}")
-            for match in top_matches:
-                print(f"  Rank {match['rank']}: {match['criminal']['full_name']} - Similarity: {match['similarity_score']*100:.1f}%, Confidence: {match['confidence_level']}")
+            print(f"\n[RESULTS]")
+            print(f"  Total matches: {len(matches)}")
+            print(f"  Returning top: {len(top_matches)}")
+            print(f"  Candidates above average: {sum(1 for m in matches if m['statistical_analysis']['above_average'])}")
+            
+            for match in top_matches[:5]:  # Print first 5 for brevity
+                print(f"  Rank {match['rank']}: {match['criminal']['full_name']}")
+                print(f"    Hybrid: {match['similarity_score']*100:.1f}%, "
+                      f"Embedding: {match['embedding_similarity']*100:.1f}%, "
+                      f"Geometric: {match['geometric_similarity']*100:.1f}%")
+                print(f"    Z-score: {match['statistical_analysis']['z_score']:.2f}, "
+                      f"Category: {match['similarity_category']}")
+            
+            if len(top_matches) > 5:
+                print(f"  ... and {len(top_matches) - 5} more")
             
             return jsonify({
                 "matches": top_matches,
                 "total_matches": len(matches),
-                "showing_top": min(3, len(matches)),
+                "showing_top": len(top_matches),
                 "threshold_used": threshold,
-                "forensic_note": "These are POSSIBLE MATCHES ranked by similarity. Cross-domain sketch-to-photo matching has inherent limitations. Results should be used as investigation leads, not absolute identification. Manual verification is required.",
+                "distribution_analysis": distribution_stats,
+                "search_method": "optimized (precomputed embeddings + statistical analysis)",
+                "forensic_note": "Results ranked with statistical analysis. Candidates significantly above average are highlighted. Cross-domain sketch-to-photo matching has inherent limitations. Use as investigation leads, not absolute identification. Manual verification required.",
                 "interpretation_guide": {
-                    "possible_match": "Strong candidate - worth investigating further",
-                    "weak_match": "Weak candidate - low confidence",
-                    "uncertain": "Insufficient similarity for reliable matching",
-                    "unlikely": "Unlikely to be the same person"
-                }
+                    "HIGH": "Significantly above average (1.5+ std devs) - Priority investigation",
+                    "MEDIUM": "Above or near average (0.5-1.5 std devs) - Worth investigating",
+                    "LOW": "Below average - Lower priority, but not excluded"
+                },
+                "usage_tips": [
+                    "Review top 5-10 candidates manually",
+                    "Compare embedding vs geometric scores for consistency",
+                    "Candidates with high z-scores are statistical outliers (better matches)",
+                    "Use explanation field to understand each match's scoring breakdown"
+                ]
             })
             
         finally:
             # Clean up sketch temp file
-            try:
-                os.remove(sketch_path)
-            except:
-                pass
+            cleanup_temp_file(sketch_path)
                 
     except Exception as e:
         print("/api/criminals/search error:\n" + traceback.format_exc())
@@ -1508,14 +2384,8 @@ def compare_faces():
             })
         finally:
             # Cleanup temp files
-            try:
-                os.remove(sketch_path)
-            except Exception:
-                pass
-            try:
-                os.remove(photo_path)
-            except Exception:
-                pass
+            cleanup_temp_file(sketch_path)
+            cleanup_temp_file(photo_path)
     except Exception as e:
         print("/api/compare error:\n" + traceback.format_exc())
         return jsonify({"error": str(e)}), 500
@@ -1673,15 +2543,18 @@ if __name__ == '__main__':
     sys.stdout.reconfigure(line_buffering=True)
     
     print("\n" + "=" * 60)
-    print("FaceFind Forensics API v2 - Complete System")
+    print("FaceFind Forensics API v2 - Hybrid Scoring System")
     print("=" * 60)
     print("[OK] Role-Based Authentication (Admin OTP + Officer)")
     print("[OK] Criminal Database Management")
-    print("[OK] Face Comparison with DeepFace")
+    print("[OK] Face Comparison with Hybrid Scoring")
     print("=" * 60)
     
     # Initialize DeepFace models on startup
     initialize_models()
+    
+    # Precompute database embeddings on startup
+    precompute_database_embeddings()
     
     port = int(os.environ.get('PORT', '5001'))
     print(f"\n[OK] Server ready on http://localhost:{port}")
