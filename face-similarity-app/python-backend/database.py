@@ -107,6 +107,10 @@ class Criminal(Base):
     photo_data = Column(LargeBinary, nullable=False)
     photo_filename = Column(String(255), nullable=False)
     
+    # Precomputed ArcFace embedding (512-D vector stored as JSON)
+    face_embedding = Column(JSONEncodedDict, nullable=True)  # 512-dimensional vector
+    embedding_version = Column(String(50), nullable=True)  # Track embedding model version
+    
     # Detailed forensic data (JSON columns)
     appearance = Column(JSONEncodedDict, nullable=True)  # {height, weight, build, hair, eyes, marks, tattoos, scars}
     locations = Column(JSONEncodedDict, nullable=True)  # {city, state, country, lastSeen, knownAddresses}

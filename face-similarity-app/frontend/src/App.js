@@ -29,6 +29,31 @@ axios.interceptors.request.use(
   }
 );
 
+// Add response interceptor to handle 401 errors (expired/invalid token)
+axios.interceptors.response.use(
+  (response) => {
+    return response;
+  },
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      // Token expired or invalid
+      const isAuthEndpoint = error.config?.url?.includes('/api/auth/');
+      
+      // Only redirect if not already on auth endpoint
+      if (!isAuthEndpoint) {
+        console.log('Token expired or invalid. Redirecting to login...');
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        
+        // Show alert and redirect to login
+        alert('Your session has expired. Please login again.');
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 function App() {
   const [sketchFile, setSketchFile] = useState(null);
   const [photoFile, setPhotoFile] = useState(null);
@@ -169,7 +194,12 @@ function App() {
     } catch (error) {
       console.error('Error loading criminals:', error);
       
-      // Provide more helpful error messages
+      // Don't show alert if it's a 401 error (handled by interceptor)
+      if (error.response && error.response.status === 401) {
+        return; // Interceptor will handle redirect
+      }
+      
+      // Provide more helpful error messages for other errors
       let errorMessage = 'Failed to load criminals database. ';
       
       if (error.code === 'ECONNREFUSED' || error.message.includes('ERR_CONNECTION_REFUSED') || 
