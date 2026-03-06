@@ -1,0 +1,153 @@
+/* Similarity Distribution Chart Styles */
+
+.similarity-distribution-chart {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  padding: 24px;
+  box-shadow: var(--shadow-xl), var(--glow-accent);
+  animation: chartFadeIn 0.6s ease-out;
+}
+
+@keyframes chartFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.chart-header {
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.chart-title {
+  font-size: 20px;
+  font-weight: 700;
+  font-family: var(--font-heading);
+  color: var(--forensic-accent);
+  margin: 0 0 8px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-shadow: 0 0 20px var(--forensic-accent-glow);
+}
+
+.chart-icon {
+  font-size: 24px;
+  filter: drop-shadow(0 0 8px var(--forensic-accent-glow));
+}
+
+.chart-subtitle {
+  font-size: 13px;
+  color: var(--forensic-gray-400);
+  margin: 0;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+.chart-container {
+  position: relative;
+  min-height: 400px;
+}
+
+/* Custom Tooltip */
+.custom-tooltip {
+  background: rgba(17, 24, 39, 0.95);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--forensic-accent);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), var(--glow-accent);
+}
+
+.tooltip-label {
+  font-size: 12px;
+  color: var(--forensic-gray-400);
+  margin: 0 0 4px 0;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+
+.tooltip-value {
+  font-size: 20px;
+  color: var(--forensic-accent);
+  margin: 0;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  text-shadow: 0 0 10px var(--forensic-accent-glow);
+}
+
+/* Chart Footer */
+.chart-footer {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--glass-border);
+}
+
+.chart-stats {
+  display: flex;
+  justify-content: space-around;
+  gap: 20px;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--forensic-gray-400);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+
+.stat-value {
+  font-size: 24px;
+  color: var(--forensic-accent);
+  font-weight: 700;
+  font-family: var(--font-mono);
+  text-shadow: 0 0 10px var(--forensic-accent-glow);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .similarity-distribution-chart {
+    padding: 20px;
+  }
+
+  .chart-title {
+    font-size: 18px;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .chart-subtitle {
+    font-size: 12px;
+  }
+
+  .chart-container {
+    min-height: 350px;
+  }
+
+  .chart-stats {
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .stat-value {
+    font-size: 20px;
+  }
+}

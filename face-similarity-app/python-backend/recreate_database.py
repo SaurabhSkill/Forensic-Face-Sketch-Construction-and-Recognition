@@ -19,12 +19,12 @@ def recreate_database():
     if os.path.exists(DB_FILE):
         print(f"Deleting old database: {DB_FILE}")
         os.remove(DB_FILE)
-        print("✓ Old database deleted")
+        print("[OK] Old database deleted")
     
     # Create new tables
     print("Creating new database tables...")
     create_tables()
-    print("✓ Tables created")
+    print("[OK] Tables created")
     
     # Create admin user
     print("\nCreating admin user...")
@@ -47,7 +47,7 @@ def recreate_database():
         db.add(admin_user)
         db.commit()
         
-        print("✓ Admin user created successfully")
+        print("[OK] Admin user created successfully")
         print(f"\n{'='*60}")
         print("ADMIN CREDENTIALS:")
         print(f"{'='*60}")
@@ -62,7 +62,7 @@ def recreate_database():
         
     except Exception as e:
         db.rollback()
-        print(f"✗ Error creating admin: {e}")
+        print(f"[FAIL] Error creating admin: {e}")
         raise
     finally:
         db.close()

@@ -1,0 +1,527 @@
+/* Criminal Match Card Styles */
+
+.criminal-match-card {
+  background: linear-gradient(135deg, var(--forensic-card) 0%, var(--forensic-bg) 100%);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  transition: all var(--transition-base);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg);
+  animation: cardFadeIn 0.5s ease-out backwards;
+}
+
+@keyframes cardFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.criminal-match-card:nth-child(1) { animation-delay: 0.1s; }
+.criminal-match-card:nth-child(2) { animation-delay: 0.2s; }
+.criminal-match-card:nth-child(3) { animation-delay: 0.3s; }
+.criminal-match-card:nth-child(4) { animation-delay: 0.4s; }
+.criminal-match-card:nth-child(5) { animation-delay: 0.5s; }
+
+.criminal-match-card:hover {
+  transform: translateY(-8px);
+  box-shadow: var(--shadow-2xl);
+}
+
+/* Rank-specific borders */
+.criminal-match-card.rank-gold {
+  border: 3px solid #ffd700;
+  box-shadow: 
+    0 8px 24px rgba(0, 0, 0, 0.3),
+    0 0 40px rgba(255, 215, 0, 0.3);
+}
+
+.criminal-match-card.rank-gold:hover {
+  box-shadow: 
+    0 16px 48px rgba(0, 0, 0, 0.5),
+    0 0 60px rgba(255, 215, 0, 0.5);
+}
+
+.criminal-match-card.rank-silver {
+  border: 3px solid #c0c0c0;
+  box-shadow: 
+    0 8px 24px rgba(0, 0, 0, 0.3),
+    0 0 40px rgba(192, 192, 192, 0.3);
+}
+
+.criminal-match-card.rank-silver:hover {
+  box-shadow: 
+    0 16px 48px rgba(0, 0, 0, 0.5),
+    0 0 60px rgba(192, 192, 192, 0.5);
+}
+
+.criminal-match-card.rank-bronze {
+  border: 3px solid #cd7f32;
+  box-shadow: 
+    0 8px 24px rgba(0, 0, 0, 0.3),
+    0 0 40px rgba(205, 127, 50, 0.3);
+}
+
+.criminal-match-card.rank-bronze:hover {
+  box-shadow: 
+    0 16px 48px rgba(0, 0, 0, 0.5),
+    0 0 60px rgba(205, 127, 50, 0.5);
+}
+
+.criminal-match-card.rank-default {
+  border: 2px solid var(--glass-border);
+}
+
+.criminal-match-card.rank-default:hover {
+  border-color: var(--forensic-accent);
+}
+
+/* Rank Badge */
+.rank-badge {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.rank-number {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  animation: rankPulse 2s ease-in-out infinite;
+}
+
+@keyframes rankPulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+.rank-gold .rank-number {
+  background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+  color: #3d2a00;
+  border: 2px solid #ffd700;
+}
+
+.rank-silver .rank-number {
+  background: linear-gradient(135deg, #c0c0c0 0%, #e8e8e8 100%);
+  color: #2a2a2a;
+  border: 2px solid #c0c0c0;
+}
+
+.rank-bronze .rank-number {
+  background: linear-gradient(135deg, #cd7f32 0%, #e89a5a 100%);
+  color: #2a1a0a;
+  border: 2px solid #cd7f32;
+}
+
+.rank-default .rank-number {
+  background: linear-gradient(135deg, var(--forensic-accent) 0%, var(--forensic-accent-dark) 100%);
+  color: var(--forensic-gray-900);
+  border: 2px solid var(--forensic-accent);
+}
+
+.rank-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px 8px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  white-space: nowrap;
+}
+
+.rank-gold .rank-label {
+  color: #ffd700;
+  border: 1px solid rgba(255, 215, 0, 0.3);
+}
+
+.rank-silver .rank-label {
+  color: #c0c0c0;
+  border: 1px solid rgba(192, 192, 192, 0.3);
+}
+
+.rank-bronze .rank-label {
+  color: #cd7f32;
+  border: 1px solid rgba(205, 127, 50, 0.3);
+}
+
+.rank-default .rank-label {
+  color: var(--forensic-accent);
+  border: 1px solid var(--glass-border);
+}
+
+/* Criminal Photo */
+.criminal-photo-container {
+  position: relative;
+  width: 100%;
+  height: 280px;
+  background: linear-gradient(135deg, var(--forensic-bg) 0%, var(--forensic-card) 100%);
+  overflow: hidden;
+}
+
+.criminal-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.criminal-match-card:hover .criminal-photo {
+  transform: scale(1.05);
+}
+
+.photo-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.photo-placeholder svg {
+  width: 80px;
+  height: 80px;
+  color: var(--forensic-gray-500);
+}
+
+/* Score Overlay */
+.score-overlay {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 10;
+}
+
+.score-circle {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(12px);
+  border: 3px solid var(--forensic-accent);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--glow-accent);
+  animation: scorePulse 2s ease-in-out infinite;
+}
+
+@keyframes scorePulse {
+  0%, 100% {
+    box-shadow: var(--glow-accent);
+  }
+  50% {
+    box-shadow: 0 4px 24px var(--forensic-accent-glow);
+  }
+}
+
+.score-number {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--forensic-accent);
+  line-height: 1;
+  font-family: var(--font-mono);
+}
+
+.score-percent {
+  font-size: 12px;
+  color: var(--forensic-gray-400);
+  font-weight: 600;
+}
+
+/* Criminal Info */
+.criminal-info {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.criminal-name {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: var(--font-heading);
+  color: var(--forensic-gray-50);
+  margin: 0 0 12px 0;
+  line-height: 1.3;
+}
+
+.info-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.info-label {
+  font-size: 11px;
+  color: var(--forensic-gray-400);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+
+.info-value {
+  font-size: 13px;
+  color: var(--forensic-gray-300);
+  font-family: var(--font-mono);
+}
+
+.criminal-id {
+  color: var(--forensic-accent);
+  font-weight: 600;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--forensic-warning);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  margin-top: 8px;
+}
+
+/* Similarity Section */
+.similarity-section {
+  padding: 16px 20px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.similarity-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.similarity-label {
+  font-size: 12px;
+  color: var(--forensic-gray-400);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+
+.similarity-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--forensic-accent);
+  font-family: var(--font-mono);
+}
+
+.similarity-bar-container {
+  height: 8px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.similarity-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--forensic-accent) 0%, var(--forensic-accent-dark) 100%);
+  border-radius: 4px;
+  position: relative;
+  transition: width 1.5s ease-out;
+  box-shadow: var(--glow-accent);
+  animation: barGlow 2s ease-in-out infinite;
+}
+
+@keyframes barGlow {
+  0%, 100% {
+    box-shadow: var(--glow-accent);
+  }
+  50% {
+    box-shadow: 0 0 20px var(--forensic-accent-glow);
+  }
+}
+
+.similarity-bar-shine {
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    rgba(255, 255, 255, 0.4) 50%, 
+    transparent 100%);
+  animation: shine 3s ease-in-out infinite;
+}
+
+@keyframes shine {
+  0% {
+    left: -100%;
+  }
+  50%, 100% {
+    left: 200%;
+  }
+}
+
+/* Confidence Section */
+.confidence-section {
+  padding: 16px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.confidence-label {
+  font-size: 12px;
+  color: var(--forensic-gray-400);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+
+.confidence-badge {
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border: 1px solid;
+}
+
+.confidence-badge.high {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--forensic-success);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.confidence-badge.medium {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--forensic-warning);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.confidence-badge.low {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--forensic-error);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.confidence-badge.unknown {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--forensic-gray-400);
+  border-color: var(--glass-border);
+}
+
+/* View Details Button */
+.view-details-btn {
+  width: 100%;
+  padding: 16px;
+  background: linear-gradient(135deg, var(--forensic-accent) 0%, var(--forensic-accent-dark) 100%);
+  border: none;
+  color: var(--forensic-gray-900);
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font-heading);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all var(--transition-base);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.view-details-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.view-details-btn:hover {
+  background: linear-gradient(135deg, var(--forensic-accent-light) 0%, var(--forensic-accent) 100%);
+  box-shadow: var(--glow-accent);
+  transform: translateY(-2px);
+}
+
+.view-details-btn:active {
+  transform: translateY(0);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .criminal-photo-container {
+    height: 240px;
+  }
+
+  .rank-badge {
+    top: 12px;
+    left: 12px;
+  }
+
+  .rank-number {
+    width: 40px;
+    height: 40px;
+    font-size: 16px;
+  }
+
+  .rank-label {
+    font-size: 9px;
+    padding: 3px 6px;
+  }
+
+  .score-overlay {
+    top: 12px;
+    right: 12px;
+  }
+
+  .score-circle {
+    width: 56px;
+    height: 56px;
+  }
+
+  .score-number {
+    font-size: 20px;
+  }
+
+  .criminal-name {
+    font-size: 16px;
+  }
+
+  .criminal-info {
+    padding: 16px;
+  }
+
+  .similarity-section,
+  .confidence-section {
+    padding: 12px 16px;
+  }
+
+  .view-details-btn {
+    padding: 14px;
+    font-size: 13px;
+  }
+}

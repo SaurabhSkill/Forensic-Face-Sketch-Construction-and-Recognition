@@ -1,0 +1,806 @@
+/* Import Forensic Theme */
+@import './theme/forensic-theme.css';
+
+/* Import Inter Font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+/* Reset and Base Styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-body);
+  line-height: 1.6;
+  color: var(--forensic-gray-100);
+  background-color: var(--forensic-bg);
+}
+
+.App {
+  min-height: 100vh;
+  background: var(--forensic-bg);
+}
+
+/* REMOVED: Fixed container system - will be replaced with responsive layout
+   Old .container had max-width and fixed padding */
+
+/* Header Styles - CLEANED */
+.header {
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 1.25rem 0;
+  box-shadow: 
+    0 4px 30px rgba(0, 0, 0, 0.4),
+    0 0 30px rgba(0, 245, 160, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(0, 255, 200, 0.15);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+/* REMOVED: Fixed header container layout - will be replaced with responsive system
+   Old .header .layout-container had fixed dimensions and gaps */
+
+/* Layout Container */
+.layout-container {
+  max-width: clamp(320px, 90vw, 1400px);
+  margin: 0 auto;
+  padding: 0 clamp(1rem, 3vw, 2rem);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(0.75rem, 2vw, 1.5rem);
+}
+
+/* Logo - CLEANED */
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transition: all var(--transition-base);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.logo:hover {
+  transform: translateY(-2px);
+}
+
+/* REMOVED: Fixed logo dimensions - will be replaced with responsive system
+   Old values: width: 45px, height: 45px */
+
+.logo-icon {
+  background: linear-gradient(135deg, #00f5a0 0%, #00d9f5 100%);
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #0a1628;
+  box-shadow: 
+    0 4px 15px rgba(0, 245, 160, 0.4),
+    0 0 25px rgba(0, 245, 160, 0.25);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  width: clamp(40px, 5vw, 45px);
+  height: clamp(40px, 5vw, 45px);
+}
+
+.logo:hover .logo-icon {
+  box-shadow: 
+    0 6px 25px rgba(0, 245, 160, 0.6),
+    0 0 40px rgba(0, 245, 160, 0.4),
+    0 0 60px rgba(0, 245, 160, 0.2);
+  transform: rotate(-5deg) scale(1.05);
+}
+
+/* REMOVED: Fixed SVG dimensions - will be replaced with responsive system
+   Old values: width: 26px, height: 26px */
+
+.logo-text {
+  display: flex;
+  flex-direction: column;
+}
+
+/* REMOVED: Fixed font sizes - will be replaced with fluid typography
+   Old .logo-main: font-size: 1.3125rem (21px)
+   Old .logo-sub: font-size: 11px */
+
+.logo-main {
+  font-weight: 800;
+  font-family: var(--font-heading);
+  color: var(--forensic-gray-50);
+  line-height: 1;
+  letter-spacing: -0.025em;
+  text-shadow: 0 0 20px rgba(0, 245, 160, 0.15);
+  transition: text-shadow 0.3s ease;
+  font-size: clamp(1.125rem, 2vw, 1.3125rem);
+}
+
+.logo:hover .logo-main {
+  text-shadow: 0 0 30px rgba(0, 245, 160, 0.3);
+}
+
+.logo-sub {
+  color: rgba(0, 245, 160, 0.7);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  text-shadow: 0 0 10px rgba(0, 245, 160, 0.2);
+  font-size: clamp(0.625rem, 1.2vw, 0.6875rem);
+}
+
+/* Nav - CLEANED */
+.nav {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex: 1;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* REMOVED: Fixed nav-link dimensions - will be replaced with responsive system
+   Old values: font-size: 0.8125rem, padding: 0.5rem 0.75rem */
+
+.nav-link {
+  color: rgba(148, 163, 184, 0.9);
+  text-decoration: none;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-family: var(--font-heading);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  font-size: clamp(0.75rem, 1.2vw, 0.8125rem);
+  padding: clamp(0.4rem, 1vw, 0.5rem) clamp(0.6rem, 1.5vw, 0.75rem);
+}
+
+/* Glowing underline for active tab */
+.nav-link::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #00f5a0, #00d9f5, transparent);
+  box-shadow: 0 0 10px rgba(0, 245, 160, 0.8), 0 0 20px rgba(0, 245, 160, 0.4);
+  transition: width 0.3s ease;
+  border-radius: 2px;
+}
+
+/* Hover effect with neon highlight */
+.nav-link:hover {
+  color: #00f5a0;
+  text-shadow: 0 0 10px rgba(0, 245, 160, 0.5);
+  background: rgba(0, 245, 160, 0.05);
+  border-color: rgba(0, 245, 160, 0.2);
+  transform: translateY(-2px);
+}
+
+.nav-link:hover::after {
+  width: 80%;
+}
+
+/* Active tab styling */
+.nav-link.active {
+  color: #00f5a0;
+  text-shadow: 0 0 15px rgba(0, 245, 160, 0.6);
+  background: rgba(0, 245, 160, 0.08);
+  border-color: rgba(0, 245, 160, 0.25);
+}
+
+.nav-link.active::after {
+  width: 90%;
+  height: 3px;
+  box-shadow: 
+    0 0 15px rgba(0, 245, 160, 1),
+    0 0 30px rgba(0, 245, 160, 0.6),
+    0 0 45px rgba(0, 245, 160, 0.3);
+}
+
+.nav-link:active {
+  transform: translateY(0);
+}
+
+/* User Menu - CLEANED */
+.user-menu {
+  position: relative;
+  margin-left: 1rem;
+}
+
+/* REMOVED: Fixed button dimensions - will be replaced with responsive system
+   Old values: padding: 0.65rem, font-size: 18px */
+
+.user-menu-btn {
+  background: rgba(0, 245, 160, 0.1);
+  border: 1px solid rgba(0, 245, 160, 0.25);
+  color: #00f5a0;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 15px rgba(0, 245, 160, 0.15);
+}
+
+.user-menu-btn:hover {
+  background: rgba(0, 245, 160, 0.2);
+  border-color: rgba(0, 245, 160, 0.5);
+  box-shadow: 
+    0 0 25px rgba(0, 245, 160, 0.4),
+    0 0 40px rgba(0, 245, 160, 0.2),
+    inset 0 0 15px rgba(0, 245, 160, 0.1);
+  transform: translateY(-2px) scale(1.05);
+}
+
+.user-dropdown {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 0.5rem;
+  min-width: 250px;
+  box-shadow: var(--shadow-2xl), var(--glow-accent);
+  z-index: 1000;
+}
+
+.dropdown-item {
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+  cursor: pointer;
+}
+
+.dropdown-item:hover {
+  background: rgba(6, 182, 212, 0.1);
+}
+
+.user-info-item {
+  cursor: default;
+}
+
+.user-info-item:hover {
+  background: transparent;
+}
+
+.info-label {
+  font-size: 11px;
+  color: var(--forensic-gray-400);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.info-value {
+  font-size: 13px;
+  color: var(--forensic-gray-200);
+  margin-top: 0.25rem;
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: var(--glass-border);
+  margin: 0.5rem 0;
+}
+
+.logout-btn {
+  color: var(--forensic-error);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  border: none;
+  background: none;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.logout-btn:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* Hero Section - CLEANED */
+.hero {
+  background: linear-gradient(135deg, var(--forensic-bg) 0%, var(--forensic-gray-800) 100%);
+}
+
+/* REMOVED: Fixed hero padding - will be replaced with responsive system
+   Old value: padding: 4rem 0 */
+
+.hero-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3rem;
+  align-items: center;
+}
+
+/* REMOVED: Fixed hero typography - will be replaced with fluid typography
+   Old .hero-title: font-size: 1.875rem
+   Old .hero-subtitle: font-size: 1.125rem */
+
+.hero-title {
+  font-weight: 800;
+  font-family: var(--font-heading);
+  color: var(--forensic-gray-50);
+  margin-bottom: 1rem;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+}
+
+.hero-subtitle {
+  color: var(--forensic-gray-400);
+  margin-bottom: 2rem;
+}
+
+/* CTA Button - CLEANED */
+/* REMOVED: Fixed button dimensions - will be replaced with responsive system
+   Old values: padding: 1rem 2rem, font-size: 1rem */
+
+.cta-button {
+  background: linear-gradient(135deg, var(--forensic-accent) 0%, var(--forensic-accent-dark) 100%);
+  color: var(--forensic-gray-900);
+  border: none;
+  border-radius: var(--radius-lg);
+  font-weight: 700;
+  font-family: var(--font-heading);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  box-shadow: var(--shadow-lg), var(--glow-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.cta-button:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-xl), 0 0 30px var(--forensic-accent-glow);
+}
+
+/* Services Section - CLEANED */
+/* REMOVED: Fixed section padding - will be replaced with responsive system
+   Old value: padding: 4rem 0 */
+
+.services {
+  background: var(--forensic-card);
+}
+
+/* REMOVED: Fixed section title typography - will be replaced with fluid typography
+   Old value: font-size: 1.875rem */
+
+.section-title {
+  font-weight: 800;
+  font-family: var(--font-heading);
+  color: var(--forensic-accent);
+  text-align: center;
+  margin-bottom: 3rem;
+  letter-spacing: -0.025em;
+  font-size: clamp(1.5rem, 3vw, 1.875rem);
+}
+
+.services-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 2rem;
+}
+
+/* Service Card - CLEANED */
+.service-card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  text-align: center;
+  transition: all var(--transition-base);
+  box-shadow: var(--shadow-md);
+  padding: clamp(1.5rem, 3vw, 2rem);
+}
+
+/* REMOVED: Fixed card padding - will be replaced with responsive system
+   Old value: padding: 2rem */
+
+.service-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(6, 182, 212, 0.4);
+  box-shadow: var(--shadow-xl), var(--glow-accent);
+}
+
+/* REMOVED: Fixed icon dimensions - will be replaced with responsive system
+   Old values: width: 60px, height: 60px */
+
+.service-icon {
+  margin: 0 auto 1.5rem;
+  background: linear-gradient(135deg, var(--forensic-accent) 0%, var(--forensic-accent-dark) 100%);
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--forensic-gray-900);
+  box-shadow: var(--glow-accent);
+}
+
+/* REMOVED: Fixed SVG dimensions - will be replaced with responsive system
+   Old values: width: 30px, height: 30px */
+
+/* REMOVED: Fixed card heading size - will be replaced with fluid typography
+   Old value: font-size: 1.25rem */
+
+.service-card h3 {
+  font-family: var(--font-heading);
+  color: var(--forensic-gray-100);
+  margin-bottom: 0.5rem;
+}
+
+/* How It Works Section - CLEANED */
+/* REMOVED: Fixed section padding - will be replaced with responsive system
+   Old value: padding: 4rem 0 */
+
+.how-it-works {
+  background: var(--forensic-bg);
+}
+
+.process-flow {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+
+.process-step {
+  text-align: center;
+  flex: 1;
+  min-width: 200px;
+}
+
+/* REMOVED: Fixed step icon dimensions - will be replaced with responsive system
+   Old values: width: 80px, height: 80px */
+
+.step-icon {
+  margin: 0 auto 1rem;
+  background: linear-gradient(135deg, var(--forensic-accent) 0%, var(--forensic-accent-dark) 100%);
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--forensic-gray-900);
+  box-shadow: var(--glow-accent);
+}
+
+/* REMOVED: Fixed SVG dimensions - will be replaced with responsive system
+   Old values: width: 40px, height: 40px */
+
+/* REMOVED: Fixed heading size - will be replaced with fluid typography
+   Old value: font-size: 1.125rem */
+
+.process-step h3 {
+  font-family: var(--font-heading);
+  color: var(--forensic-gray-200);
+}
+
+.process-connector {
+  width: 60px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--forensic-accent) 0%, var(--forensic-accent-dark) 100%);
+  box-shadow: var(--glow-accent);
+}
+
+/* Main Content Section - CLEANED */
+/* REMOVED: Fixed section padding - will be replaced with responsive system
+   Old value: padding: 4rem 0 */
+
+.main-content {
+  background: var(--forensic-bg);
+  padding: clamp(2rem, 4vw, 4rem) 0;
+}
+
+/* Tab Content */
+.tab-content {
+  animation: fadeIn 0.3s ease;
+  padding: clamp(1rem, 2vw, 2rem);
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* REMOVED: Tab content layout - will be replaced with responsive system */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Main Container */
+/* Main container removed - will be replaced with new layout system */
+
+/* Upload Section Styles - CLEANED */
+.upload-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  margin-bottom: 2rem;
+  box-shadow: var(--shadow-lg);
+  padding: clamp(1.5rem, 3vw, 2rem);
+}
+
+/* REMOVED: Fixed section padding - will be replaced with responsive system
+   Old value: padding: 2rem */
+
+.upload-area {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* REMOVED: Fixed heading size - will be replaced with fluid typography
+   Old value: font-size: 1rem */
+
+.upload-area h3 {
+  font-weight: 700;
+  font-family: var(--font-heading);
+  color: var(--forensic-gray-200);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: clamp(0.875rem, 1.5vw, 1rem);
+}
+
+/* File Label - CLEANED */
+.file-input {
+  display: none;
+}
+
+/* REMOVED: Fixed file label dimensions - will be replaced with responsive system
+   Old values: padding: 0.875rem 1.5rem, font-size: 0.95rem */
+
+.file-label {
+  display: inline-block;
+  background: rgba(6, 182, 212, 0.1);
+  border: 2px dashed var(--forensic-accent);
+  border-radius: var(--radius-lg);
+  color: var(--forensic-accent);
+  font-weight: 600;
+  font-family: var(--font-heading);
+  cursor: pointer;
+  transition: all var(--transition-base);
+  text-align: center;
+  padding: clamp(0.75rem, 2vw, 0.875rem) clamp(1.25rem, 3vw, 1.5rem);
+  font-size: clamp(0.875rem, 1.5vw, 0.95rem);
+  width: 100%;
+}
+
+.file-label:hover {
+  background: rgba(6, 182, 212, 0.2);
+  border-color: var(--forensic-accent-light);
+  box-shadow: 0 0 20px var(--forensic-accent-glow);
+  transform: translateY(-2px);
+}
+
+/* Button Styles - CLEANED */
+/* REMOVED: Fixed button dimensions - will be replaced with responsive system
+   Old values: padding: 12px 24px, font-size: 1rem */
+
+.forensic-btn-primary,
+.compare-button,
+.search-button {
+  background: linear-gradient(135deg, #00f5a0, #00d9f5);
+  color: #0a1628;
+  border-radius: 10px;
+  font-weight: 600;
+  font-family: var(--font-heading);
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  width: 100%;
+  margin-top: 0.5rem;
+  box-shadow: 0 4px 15px rgba(0, 245, 160, 0.2);
+  padding: clamp(0.75rem, 2vw, 1rem) clamp(1.5rem, 3vw, 2rem);
+  font-size: clamp(0.875rem, 1.5vw, 1rem);
+}
+
+.forensic-btn-primary:hover:not(:disabled),
+.compare-button:hover:not(:disabled),
+.search-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 245, 160, 0.3);
+}
+
+.forensic-btn-primary:disabled,
+.compare-button:disabled,
+.search-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: linear-gradient(135deg, var(--forensic-gray-600) 0%, var(--forensic-gray-700) 100%);
+  box-shadow: none;
+}
+
+.forensic-btn-primary:active:not(:disabled),
+.compare-button:active:not(:disabled),
+.search-button:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 2px 10px rgba(0, 245, 160, 0.2);
+}
+
+/* Secondary Button Styles - CLEANED */
+/* REMOVED: Fixed button dimensions - will be replaced with responsive system
+   Old values: padding: 10px 20px, font-size: 0.9rem */
+
+.add-new-button {
+  background: linear-gradient(135deg, #00f5a0, #00d9f5);
+  color: #0a1628;
+  border-radius: 10px;
+  font-weight: 600;
+  font-family: var(--font-heading);
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  box-shadow: 0 4px 15px rgba(0, 245, 160, 0.2);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.add-new-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 245, 160, 0.3);
+}
+
+.add-new-button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 10px rgba(0, 245, 160, 0.2);
+}
+
+/* Database Header */
+.database-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+/* Comparison Container */
+.comparison-container {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2rem;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+/* Search Container */
+.search-container {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+/* Footer - CLEANED */
+.footer {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  border-top: 1px solid var(--glass-border);
+  margin-top: 4rem;
+  padding: clamp(1.5rem, 3vw, 2rem) 0;
+}
+
+/* REMOVED: Fixed footer padding - will be replaced with responsive system
+   Old value: padding: 2rem 0 */
+
+.footer-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2rem;
+}
+
+.footer-contact {
+  display: flex;
+  gap: 2rem;
+}
+
+/* REMOVED: Fixed contact item font size - will be replaced with fluid typography
+   Old value: font-size: 14px */
+
+.contact-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--forensic-gray-400);
+}
+
+/* REMOVED: Fixed SVG dimensions - will be replaced with responsive system
+   Old values: width: 18px, height: 18px */
+
+.contact-item svg {
+  color: var(--forensic-accent);
+}
+
+.footer-links {
+  display: flex;
+  gap: 1.5rem;
+}
+
+/* REMOVED: Fixed link font size - will be replaced with fluid typography
+   Old value: font-size: 14px */
+
+.footer-link {
+  color: var(--forensic-gray-400);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.footer-link:hover {
+  color: var(--forensic-accent);
+}
+
+/* REMOVED: Fixed decoration SVG dimensions - will be replaced with responsive system
+   Old values: width: 24px, height: 24px */
+
+.footer-decoration svg {
+  color: var(--forensic-accent);
+}
+
+/* Responsive Design - CLEANED */
+/* REMOVED: Fixed responsive overrides - will be replaced with fluid system
+   All media query overrides with fixed dimensions removed */
+
+@media (max-width: 768px) {
+  .hero-content {
+    grid-template-columns: 1fr;
+  }
+
+  .services-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .process-flow {
+    flex-direction: column;
+  }
+
+  .process-connector {
+    width: 2px;
+    height: 40px;
+    background: linear-gradient(180deg, var(--forensic-accent) 0%, var(--forensic-accent-dark) 100%);
+  }
+
+  .footer-content {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .footer-contact {
+    flex-direction: column;
+    gap: 1rem;
+  }
+}

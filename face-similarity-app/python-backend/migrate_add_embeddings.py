@@ -39,9 +39,9 @@ def migrate_database():
                 else:
                     conn.execute(text("ALTER TABLE criminals ADD COLUMN face_embedding TEXT"))
                 conn.commit()
-                print("✓ face_embedding column added")
+                print("[OK] face_embedding column added")
             else:
-                print("✓ face_embedding column already exists")
+                print("[OK] face_embedding column already exists")
             
             # Add embedding_version column if it doesn't exist
             if 'embedding_version' not in columns:
@@ -51,9 +51,9 @@ def migrate_database():
                 else:
                     conn.execute(text("ALTER TABLE criminals ADD COLUMN embedding_version VARCHAR(50)"))
                 conn.commit()
-                print("✓ embedding_version column added")
+                print("[OK] embedding_version column added")
             else:
-                print("✓ embedding_version column already exists")
+                print("[OK] embedding_version column already exists")
         
         print("\n[SUCCESS] Migration completed successfully!")
         print("="*60)

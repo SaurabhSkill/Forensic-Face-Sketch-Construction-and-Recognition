@@ -1,0 +1,77 @@
+/* ============================================
+   MASTER STYLESHEET
+   Import order: Theme → Base → Layout → Components
+   ============================================ */
+
+/* 1. Theme Variables - Must be loaded first */
+@import './theme.css';
+
+/* 2. Base Styles - Reset and Typography */
+@import './base.css';
+
+/* 3. Layout System - Containers, Grid, Flexbox */
+@import './layout.css';
+
+/* 4. Component Styles - Reusable UI Components */
+@import './components.css';
+
+/* ============================================
+   IMPORT FONTS
+   ============================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+/* ============================================
+   ROOT APPLICATION STYLES
+   ============================================ */
+
+.App {
+  min-height: 100vh;
+  background: var(--forensic-bg);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ============================================
+   SCROLLBAR STYLING
+   ============================================ */
+
+/* Webkit browsers (Chrome, Safari, Edge) */
+::-webkit-scrollbar {
+  width: 0.5rem;
+  height: 0.5rem;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-md);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(6, 182, 212, 0.3);
+  border-radius: var(--radius-md);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(6, 182, 212, 0.5);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(6, 182, 212, 0.3) rgba(0, 0, 0, 0.2);
+}
+
+/* ============================================
+   SELECTION STYLING
+   ============================================ */
+
+::selection {
+  background: rgba(6, 182, 212, 0.3);
+  color: var(--forensic-gray-50);
+}
+
+::-moz-selection {
+  background: rgba(6, 182, 212, 0.3);
+  color: var(--forensic-gray-50);
+}

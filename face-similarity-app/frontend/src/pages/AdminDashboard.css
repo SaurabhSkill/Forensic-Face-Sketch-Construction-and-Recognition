@@ -13,7 +13,8 @@
 }
 
 .header-content {
-  max-width: 1400px;
+  max-width: 100%;
+  width: 100%;
   margin: 0 auto;
   padding: 0 30px;
   display: flex;
@@ -105,11 +106,12 @@
 
 /* Main Content */
 .admin-main {
-  padding: 40px 0;
+  padding: 2.5rem 0;
 }
 
 .container {
-  max-width: 1400px;
+  max-width: 100%;
+  width: 100%;
   margin: 0 auto;
   padding: 0 30px;
 }
@@ -253,7 +255,7 @@
 
 .empty-state {
   text-align: center;
-  padding: 60px 20px;
+  padding: 3.75rem 1.25rem;
   background: rgba(26, 42, 58, 0.4);
   border: 1px dashed rgba(0, 255, 136, 0.2);
   border-radius: 12px;
@@ -262,7 +264,7 @@
 
 .officers-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
   gap: 25px;
 }
 

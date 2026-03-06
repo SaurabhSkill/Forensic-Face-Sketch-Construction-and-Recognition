@@ -1,0 +1,263 @@
+/* Match Score Gauge - Circular SVG Gauge Component */
+
+.forensic-match-score-section {
+  background: linear-gradient(135deg, var(--forensic-bg) 0%, var(--forensic-card) 100%);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-xl);
+  padding: 32px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow-lg);
+}
+
+.forensic-match-score-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 48px;
+  flex-wrap: wrap;
+}
+
+/* Circular Gauge Container */
+.forensic-score-circle-container {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* SVG Gauge Styling */
+.forensic-circular-gauge {
+  width: 100%;
+  height: 100%;
+  transform: scale(1);
+  transition: transform var(--transition-base);
+}
+
+.forensic-score-circle-container:hover .forensic-circular-gauge {
+  transform: scale(1.05);
+}
+
+/* Gauge Background Circle */
+.forensic-gauge-background {
+  stroke: rgba(0, 0, 0, 0.3);
+  transition: stroke var(--transition-base);
+}
+
+/* Gauge Progress Circle */
+.forensic-gauge-progress {
+  transition: stroke-dashoffset 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  stroke-linecap: round;
+}
+
+/* Gradient Colors using CSS */
+.gradient-start {
+  stop-color: var(--forensic-accent);
+}
+
+.gradient-end {
+  stop-color: var(--forensic-accent-dark);
+}
+
+/* Center Dot */
+.forensic-gauge-center-dot {
+  fill: var(--forensic-accent);
+  filter: drop-shadow(0 0 4px var(--forensic-accent-glow));
+}
+
+/* Score Display in Center */
+.forensic-score-circle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  pointer-events: none;
+}
+
+.forensic-score-value {
+  font-size: 48px;
+  font-weight: 800;
+  font-family: var(--font-heading);
+  color: var(--forensic-accent);
+  line-height: 1;
+  text-shadow: 0 0 20px var(--forensic-accent-glow);
+  animation: scoreGlow 2s ease-in-out infinite;
+}
+
+.forensic-score-percent {
+  font-size: 32px;
+  margin-left: 2px;
+}
+
+@keyframes scoreGlow {
+  0%, 100% {
+    text-shadow: 0 0 20px var(--forensic-accent-glow);
+  }
+  50% {
+    text-shadow: 0 0 30px var(--forensic-accent-glow), 0 0 40px var(--forensic-accent-glow);
+  }
+}
+
+.forensic-score-label {
+  font-size: 11px;
+  color: var(--forensic-gray-400);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  font-weight: 700;
+  margin-top: 8px;
+  font-family: var(--font-heading);
+}
+
+/* Match Category Section */
+.forensic-match-category {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 250px;
+}
+
+.forensic-category-label {
+  font-size: 12px;
+  color: var(--forensic-gray-400);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  font-weight: 600;
+  font-family: var(--font-heading);
+}
+
+.forensic-category-badge {
+  padding: 16px 24px;
+  border-radius: var(--radius-lg);
+  font-size: 18px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  text-align: center;
+  font-family: var(--font-heading);
+  border: 2px solid;
+  transition: all var(--transition-base);
+  box-shadow: var(--shadow-md);
+}
+
+.forensic-category-badge:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Category Badge Colors */
+.forensic-category-badge.very-strong {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.15) 0%, rgba(22, 163, 74, 0.15) 100%);
+  color: var(--forensic-success-light);
+  border-color: var(--forensic-success);
+  box-shadow: 0 0 20px var(--forensic-success-glow);
+}
+
+.forensic-category-badge.strong {
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, rgba(8, 145, 178, 0.15) 100%);
+  color: var(--forensic-accent-light);
+  border-color: var(--forensic-accent);
+  box-shadow: 0 0 20px var(--forensic-accent-glow);
+}
+
+.forensic-category-badge.possible {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.15) 0%, rgba(217, 119, 6, 0.15) 100%);
+  color: var(--forensic-warning-light);
+  border-color: var(--forensic-warning);
+  box-shadow: 0 0 20px var(--forensic-warning-glow);
+}
+
+.forensic-category-badge.low {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.15) 0%, rgba(220, 38, 38, 0.15) 100%);
+  color: var(--forensic-error-light);
+  border-color: var(--forensic-error);
+  box-shadow: 0 0 20px var(--forensic-error-glow);
+}
+
+/* Confidence Indicator */
+.forensic-confidence-indicator {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-base);
+}
+
+.forensic-confidence-indicator:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(6, 182, 212, 0.3);
+}
+
+.forensic-confidence-label {
+  font-size: 12px;
+  color: var(--forensic-gray-400);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+}
+
+.forensic-confidence-badge {
+  padding: 6px 16px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-family: var(--font-heading);
+  border: 1px solid;
+  transition: all var(--transition-fast);
+}
+
+/* Confidence Badge Colors */
+.forensic-confidence-badge.high {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--forensic-success-light);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.forensic-confidence-badge.medium {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--forensic-warning-light);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.forensic-confidence-badge.low {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--forensic-error-light);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .forensic-match-score-display {
+    flex-direction: column;
+    gap: 32px;
+  }
+
+  .forensic-score-circle-container {
+    width: 180px;
+    height: 180px;
+  }
+
+  .forensic-score-value {
+    font-size: 42px;
+  }
+
+  .forensic-score-percent {
+    font-size: 28px;
+  }
+
+  .forensic-match-category {
+    width: 100%;
+    min-width: unset;
+  }
+
+  .forensic-category-badge {
+    font-size: 16px;
+    padding: 14px 20px;
+  }
+}

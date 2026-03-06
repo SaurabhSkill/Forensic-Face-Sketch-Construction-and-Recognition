@@ -1,0 +1,59 @@
+/* Region Analysis Specific Styles */
+.region-analysis-wrapper {
+  position: relative;
+}
+
+.region-analysis-wrapper .forensic-embedding-section {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.05) 0%, rgba(124, 58, 237, 0.05) 100%);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+.region-analysis-wrapper .forensic-metrics-title {
+  color: #a855f7;
+  border-bottom-color: rgba(168, 85, 247, 0.3);
+}
+
+.region-analysis-wrapper .forensic-metrics-title::before {
+  color: #a855f7;
+}
+
+.region-analysis-wrapper .forensic-metric-icon {
+  color: #a855f7;
+  text-shadow: 0 0 8px rgba(168, 85, 247, 0.6);
+}
+
+.region-analysis-wrapper .forensic-metric-percentage {
+  color: #a855f7;
+  text-shadow: 0 0 10px rgba(168, 85, 247, 0.4);
+}
+
+.region-analysis-wrapper .forensic-metric-item {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(168, 85, 247, 0.2);
+}
+
+.region-analysis-wrapper .forensic-metric-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(168, 85, 247, 0.4);
+}
+
+/* Region-specific bar colors with enhanced gradients */
+.region-analysis-wrapper .forensic-metric-fill.region-eyes {
+  background: linear-gradient(90deg, var(--forensic-accent) 0%, var(--forensic-accent-dark) 50%, #006acc 100%);
+  box-shadow: 0 0 20px var(--forensic-accent-glow);
+}
+
+.region-analysis-wrapper .forensic-metric-fill.region-nose {
+  background: linear-gradient(90deg, var(--forensic-success) 0%, var(--forensic-success-dark) 50%, #009952 100%);
+  box-shadow: 0 0 20px var(--forensic-success-glow);
+}
+
+.region-analysis-wrapper .forensic-metric-fill.region-mouth {
+  background: linear-gradient(90deg, #ff6b9d 0%, #c44569 50%, #a02f4a 100%);
+  box-shadow: 0 0 20px rgba(255, 107, 157, 0.5);
+}
+
+.region-analysis-wrapper .forensic-metric-fill.region-combined {
+  background: linear-gradient(90deg, #a855f7 0%, #7c3aed 50%, #6d28d9 100%);
+  box-shadow: 0 0 20px rgba(168, 85, 247, 0.5);
+}

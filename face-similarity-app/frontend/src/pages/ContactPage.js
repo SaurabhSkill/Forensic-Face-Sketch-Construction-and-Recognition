@@ -1,29 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState } from 'react';
 import './ContactPage.css';
+import PageContainer from '../layout/PageContainer';
 
 function ContactPage() {
-  const navigate = useNavigate();
-  const [user, setUser] = useState(null);
-  const [showUserDropdown, setShowUserDropdown] = useState(false);
-
-  useEffect(() => {
-    const userStr = localStorage.getItem('user');
-    if (userStr) {
-      try {
-        setUser(JSON.parse(userStr));
-      } catch (e) {
-        console.error('Error parsing user data:', e);
-      }
-    }
-  }, []);
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    navigate('/login');
-  };
-
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -61,95 +40,17 @@ function ContactPage() {
 
   return (
     <div className="contact-page">
-      {/* Header */}
-      <header className="header">
-        <div className="container">
-          <div className="logo" onClick={() => navigate('/')} style={{cursor: 'pointer'}}>
-            <div className="logo-icon">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
-              </svg>
-            </div>
-            <div className="logo-text">
-              <span className="logo-main">FaceFind</span>
-              <span className="logo-sub">Forensics</span>
-            </div>
-          </div>
-          <nav className="nav">
-            <button 
-              className="nav-link"
-              onClick={() => navigate('/')}
-            >
-              Dashboard
-            </button>
-            <button 
-              className="nav-link"
-              onClick={() => navigate('/about')}
-            >
-              About Us
-            </button>
-            <button 
-              className="nav-link active"
-              onClick={() => navigate('/contact')}
-            >
-              Contact
-            </button>
-            
-            {/* User Menu */}
-            {user && (
-              <div className="user-menu">
-                <button 
-                  className="user-menu-btn"
-                  onClick={() => setShowUserDropdown(!showUserDropdown)}
-                >
-                  ⚙️
-                </button>
-                
-                {showUserDropdown && (
-                  <div className="user-dropdown">
-                    <div className="dropdown-item user-info-item">
-                      <div className="info-label">Name</div>
-                      <div className="info-value">{user.full_name}</div>
-                    </div>
-                    <div className="dropdown-item user-info-item">
-                      <div className="info-label">Department</div>
-                      <div className="info-value">{user.department_name}</div>
-                    </div>
-                    <div className="dropdown-item user-info-item">
-                      <div className="info-label">Officer ID</div>
-                      <div className="info-value">{user.officer_id}</div>
-                    </div>
-                    <div className="dropdown-item user-info-item">
-                      <div className="info-label">Email</div>
-                      <div className="info-value">{user.email}</div>
-                    </div>
-                    <div className="dropdown-divider"></div>
-                    <button 
-                      className="dropdown-item logout-btn"
-                      onClick={handleLogout}
-                    >
-                      <span className="logout-icon">🚪</span>
-                      Logout
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </nav>
-        </div>
-      </header>
-      
       <div className="contact-hero">
-        <div className="container">
+        <PageContainer variant="default">
           <h1 className="contact-title">Contact Us</h1>
           <p className="contact-subtitle">
             Get in touch with our forensic support team
           </p>
-        </div>
+        </PageContainer>
       </div>
 
       <div className="contact-content">
-        <div className="container">
+        <PageContainer variant="default">
           <div className="contact-grid">
             {/* Contact Information */}
             <div className="contact-info">
@@ -344,7 +245,7 @@ function ContactPage() {
               </div>
             </div>
           </div>
-        </div>
+        </PageContainer>
       </div>
     </div>
   );

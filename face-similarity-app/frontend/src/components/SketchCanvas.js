@@ -102,24 +102,50 @@ function SketchCanvas() {
 
   const handleExport = async () => {
     if (!canvasRef.current) return;
-    const canvas = await html2canvas(canvasRef.current, { backgroundColor: null });
-    const dataUrl = canvas.toDataURL('image/png');
-    setExportedImage(dataUrl);
+    try {
+      const canvas = await html2canvas(canvasRef.current, { 
+        backgroundColor: null,
+        removeContainer: true, // Clean up temporary containers
+        logging: false // Disable logging for performance
+      });
+      const dataUrl = canvas.toDataURL('image/png');
+      setExportedImage(dataUrl);
+      
+      // Clean up canvas to free memory
+      canvas.width = 0;
+      canvas.height = 0;
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Failed to export sketch. Please try again.');
+    }
   };
 
   const handleDownload = async (format) => {
     if (!canvasRef.current) return;
-    const isPng = format === 'png';
-    const canvas = await html2canvas(canvasRef.current, { backgroundColor: isPng ? null : '#ffffff' });
-    const mime = isPng ? 'image/png' : 'image/jpeg';
-    const quality = isPng ? undefined : 0.92;
-    const dataUrl = canvas.toDataURL(mime, quality);
-    const link = document.createElement('a');
-    link.href = dataUrl;
-    link.download = `sketch.${isPng ? 'png' : 'jpg'}`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      const isPng = format === 'png';
+      const canvas = await html2canvas(canvasRef.current, { 
+        backgroundColor: isPng ? null : '#ffffff',
+        removeContainer: true, // Clean up temporary containers
+        logging: false // Disable logging for performance
+      });
+      const mime = isPng ? 'image/png' : 'image/jpeg';
+      const quality = isPng ? undefined : 0.92;
+      const dataUrl = canvas.toDataURL(mime, quality);
+      const link = document.createElement('a');
+      link.href = dataUrl;
+      link.download = `sketch.${isPng ? 'png' : 'jpg'}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Clean up canvas to free memory
+      canvas.width = 0;
+      canvas.height = 0;
+    } catch (error) {
+      console.error('Download failed:', error);
+      alert('Failed to download sketch. Please try again.');
+    }
   };
 
   return (

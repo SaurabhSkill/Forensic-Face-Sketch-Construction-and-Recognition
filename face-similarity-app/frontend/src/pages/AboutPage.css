@@ -11,9 +11,9 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  max-width: 1200px;
+  max-width: 75rem;
   margin: 0 auto;
-  padding: 0 20px;
+  padding: 0 1.25rem;
 }
 
 .logo {
@@ -117,7 +117,7 @@
   border: 1px solid rgba(0, 255, 136, 0.2);
   border-radius: 12px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  min-width: 280px;
+  min-width: 17.5rem;
   overflow: hidden;
   animation: dropdownSlide 0.3s ease;
   z-index: 2000;
@@ -204,7 +204,7 @@
 
 .about-hero {
   background: linear-gradient(135deg, #0f1b2e 0%, #1a2a3a 100%);
-  padding: 80px 0 60px;
+  padding: 5rem 0 3.75rem;
   text-align: center;
   border-bottom: 2px solid rgba(0, 255, 136, 0.2);
 }
@@ -227,50 +227,56 @@
 }
 
 .about-content {
-  padding: 60px 0;
+  padding: clamp(2.5rem, 5vw, 3.75rem) 0;
 }
 
 .about-section {
-  margin-bottom: 80px;
+  margin-bottom: clamp(3rem, 8vw, 5rem);
+  padding: 0 clamp(1rem, 2vw, 0);
 }
 
 .section-icon {
-  font-size: 48px;
-  margin-bottom: 20px;
+  font-size: clamp(2.5rem, 5vw, 3rem);
+  margin-bottom: clamp(1rem, 2vw, 1.25rem);
   text-align: center;
+  display: block;
 }
 
 .about-section h2 {
-  font-size: 36px;
-  margin-bottom: 20px;
+  font-size: clamp(1.75rem, 4vw, 2.25rem);
+  margin-bottom: clamp(1rem, 2vw, 1.25rem);
   text-align: center;
   color: #ffffff;
 }
 
 .about-section > p {
-  font-size: 18px;
+  font-size: clamp(1rem, 2vw, 1.125rem);
   line-height: 1.8;
   color: #a0aec0;
   max-width: 800px;
-  margin: 0 auto 40px;
+  margin: 0 auto clamp(2rem, 4vw, 2.5rem);
   text-align: center;
 }
 
 /* Technology Grid */
 .tech-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 30px;
-  margin-top: 40px;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: clamp(1.25rem, 3vw, 1.875rem);
+  margin-top: clamp(2rem, 4vw, 2.5rem);
 }
 
 .tech-card {
   background: rgba(0, 255, 136, 0.05);
   border: 1px solid rgba(0, 255, 136, 0.2);
   border-radius: 12px;
-  padding: 30px;
+  padding: clamp(1.5rem, 3vw, 1.875rem);
   text-align: center;
   transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
 }
 
 .tech-card:hover {
@@ -294,20 +300,21 @@
 /* Features List */
 .features-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-  gap: 30px;
-  margin-top: 40px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: clamp(1.25rem, 3vw, 1.875rem);
+  margin-top: clamp(2rem, 4vw, 2.5rem);
 }
 
 .feature-item {
   display: flex;
-  gap: 20px;
+  gap: clamp(1rem, 2vw, 1.25rem);
   align-items: flex-start;
   background: rgba(0, 255, 136, 0.05);
   border: 1px solid rgba(0, 255, 136, 0.1);
   border-radius: 12px;
-  padding: 25px;
+  padding: clamp(1.25rem, 3vw, 1.5625rem);
   transition: all 0.3s ease;
+  min-height: 100%;
 }
 
 .feature-item:hover {
@@ -316,18 +323,28 @@
 }
 
 .feature-icon {
-  font-size: 36px;
+  font-size: clamp(2rem, 4vw, 2.25rem);
   flex-shrink: 0;
+  width: clamp(2.5rem, 5vw, 3rem);
+  height: clamp(2.5rem, 5vw, 3rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.feature-item > div {
+  flex: 1;
+  min-width: 0;
 }
 
 .feature-item h3 {
-  font-size: 20px;
+  font-size: clamp(1.125rem, 2vw, 1.25rem);
   margin-bottom: 10px;
   color: #ffffff;
 }
 
 .feature-item p {
-  font-size: 15px;
+  font-size: clamp(0.875rem, 1.5vw, 0.9375rem);
   color: #a0aec0;
   line-height: 1.6;
 }
@@ -336,17 +353,21 @@
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 30px;
-  margin-top: 40px;
+  gap: clamp(1.25rem, 3vw, 1.875rem);
+  margin-top: clamp(2rem, 4vw, 2.5rem);
 }
 
 .stat-card {
   background: linear-gradient(135deg, rgba(0, 255, 136, 0.1) 0%, rgba(0, 204, 106, 0.05) 100%);
   border: 2px solid rgba(0, 255, 136, 0.3);
   border-radius: 12px;
-  padding: 40px 20px;
+  padding: clamp(1.875rem, 4vw, 2.5rem) clamp(1rem, 2vw, 1.25rem);
   text-align: center;
   transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
 }
 
 .stat-card:hover {
@@ -389,18 +410,21 @@
 /* Responsive Design */
 @media (max-width: 768px) {
   .about-title {
-    font-size: 36px;
+    font-size: clamp(2rem, 6vw, 2.25rem);
   }
 
   .about-subtitle {
-    font-size: 18px;
+    font-size: clamp(1rem, 3vw, 1.125rem);
   }
 
   .about-section h2 {
-    font-size: 28px;
+    font-size: clamp(1.5rem, 4vw, 1.75rem);
   }
 
-  .tech-grid,
+  .tech-grid {
+    grid-template-columns: 1fr;
+  }
+
   .features-list {
     grid-template-columns: 1fr;
   }
@@ -410,20 +434,29 @@
   }
 
   .stat-number {
-    font-size: 36px;
+    font-size: clamp(2rem, 6vw, 2.25rem);
   }
 }
 
 @media (max-width: 480px) {
   .about-hero {
-    padding: 60px 0 40px;
+    padding: clamp(2.5rem, 6vw, 3.75rem) 0 clamp(2rem, 4vw, 2.5rem);
   }
 
   .about-title {
-    font-size: 28px;
+    font-size: clamp(1.75rem, 5vw, 2rem);
   }
 
   .stats-grid {
     grid-template-columns: 1fr;
+  }
+
+  .feature-item {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .feature-icon {
+    margin: 0 auto;
   }
 }

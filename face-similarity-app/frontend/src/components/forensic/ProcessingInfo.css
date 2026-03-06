@@ -1,0 +1,110 @@
+/* Processing Info Styles */
+
+.forensic-processing-container {
+  width: 100%;
+}
+
+.forensic-processing-section {
+  background: linear-gradient(135deg, var(--forensic-bg) 0%, var(--forensic-card) 100%);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-bottom: 20px;
+  box-shadow: var(--shadow-lg);
+}
+
+.forensic-info-section {
+  /* Additional styles for info section if needed */
+}
+
+.forensic-note-section {
+  /* Additional styles for note section if needed */
+}
+
+.forensic-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.forensic-info-item {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  transition: all var(--transition-base);
+}
+
+.forensic-info-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--glass-border);
+  transform: translateY(-2px);
+}
+
+.forensic-info-label {
+  display: block;
+  font-size: 12px;
+  color: var(--forensic-gray-400);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.forensic-info-value {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 16px;
+  color: var(--forensic-gray-100);
+  font-weight: 600;
+}
+
+.forensic-info-number {
+  font-size: 24px;
+  color: var(--forensic-accent);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  text-shadow: 0 0 10px var(--forensic-accent-glow);
+}
+
+.forensic-info-unit {
+  font-size: 14px;
+  color: var(--forensic-gray-400);
+  font-weight: 400;
+}
+
+.forensic-note-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  background: rgba(0, 212, 255, 0.05);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin-top: 16px;
+}
+
+.forensic-note-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--forensic-accent);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.forensic-note-text {
+  flex: 1;
+  font-size: 14px;
+  color: var(--forensic-gray-200);
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Override for dashboard footer context */
+.dashboard-footer .forensic-info-value {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}

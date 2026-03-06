@@ -9,4 +9,4 @@ sqlalchemy==2.0.23
 bcrypt==4.1.2
 pyjwt==2.8.0
 tf-keras==2.20.1
-
+faiss-cpu==1.7.4

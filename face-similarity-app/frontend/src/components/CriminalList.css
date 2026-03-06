@@ -1,12 +1,13 @@
-/* Criminal List Container */
+/* Criminal List Container - Visual Styles Only */
+
 .criminals-list-container {
   width: 100%;
 }
 
 .list-header {
-  margin-bottom: 24px;
-  padding-bottom: 16px;
   border-bottom: 2px solid rgba(0, 255, 136, 0.2);
+  padding: 1rem 0;
+  margin-bottom: 2rem;
 }
 
 .list-header h3 {
@@ -16,15 +17,7 @@
   margin: 0;
 }
 
-/* Criminal Grid */
-.criminals-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 24px;
-  margin-bottom: 32px;
-}
-
-/* Modern Criminal Card */
+/* Modern Criminal Card - Visual Styles Only */
 .criminal-card-modern {
   background: linear-gradient(135deg, rgba(26, 42, 58, 0.8) 0%, rgba(15, 27, 46, 0.8) 100%);
   border-radius: 12px;
@@ -33,6 +26,7 @@
   transition: all 0.3s ease;
   display: flex;
   flex-direction: column;
+  height: 100%;
 }
 
 .criminal-card-modern:hover {
@@ -41,29 +35,32 @@
   border-color: rgba(0, 255, 136, 0.3);
 }
 
-/* Photo Section */
+/* Photo Section - Visual Styles Only */
 .criminal-photo-section {
   position: relative;
-  width: 100%;
-  height: 240px;
   overflow: hidden;
   background: rgba(0, 0, 0, 0.3);
+  width: 100%;
+  height: 250px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .criminal-photo-section img {
+  object-fit: cover;
   width: 100%;
   height: 100%;
-  object-fit: cover;
 }
 
 .photo-placeholder {
+  background: rgba(0, 255, 136, 0.1);
+  color: rgba(0, 255, 136, 0.3);
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 255, 136, 0.1);
-  color: rgba(0, 255, 136, 0.3);
 }
 
 .photo-placeholder svg {
@@ -71,7 +68,7 @@
   height: 80px;
 }
 
-/* Status Badge */
+/* Status Badge - Visual Styles Only */
 .status-badge {
   position: absolute;
   top: 12px;
@@ -263,7 +260,7 @@
 /* Empty State */
 .empty-state {
   text-align: center;
-  padding: 60px 20px;
+  padding: 3.75rem 1.25rem;
   color: #a0aec0;
 }
 
@@ -282,6 +279,13 @@
 
 .empty-state p {
   font-size: 14px;
+}
+
+/* Grid Layout */
+.criminals-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+  gap: 1.5rem;
 }
 
 /* Responsive Design */

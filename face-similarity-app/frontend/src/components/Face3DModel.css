@@ -1,7 +1,8 @@
 .face-3d-container {
   position: relative;
   width: 100%;
-  height: 500px;
+  height: auto;
+  aspect-ratio: 16 / 9;
   border-radius: 12px;
   overflow: hidden;
   background: linear-gradient(135deg, rgba(10, 22, 40, 0.95) 0%, rgba(26, 42, 58, 0.95) 100%);
@@ -92,11 +93,11 @@
   z-index: 5;
 }
 
-/* HUD Corners */
+/* HUD Corners - fixed dimensions removed */
 .hud-corner {
   position: absolute;
-  width: 40px;
-  height: 40px;
+  width: 2.5rem;
+  height: 2.5rem;
   border: 3px solid #00ff88;
   animation: cornerPulse 2s ease-in-out infinite;
 }

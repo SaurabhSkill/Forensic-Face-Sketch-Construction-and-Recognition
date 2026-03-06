@@ -63,6 +63,7 @@ const CriminalDetailModal = ({ criminal, onClose }) => {
               <img 
                 src={`${API_BASE_URL}/api/criminals/${criminal.id}/photo`}
                 alt={criminal.full_name || criminal.name}
+                loading="lazy"
                 onError={(e) => {
                   e.target.style.display = 'none';
                   e.target.nextSibling.style.display = 'flex';

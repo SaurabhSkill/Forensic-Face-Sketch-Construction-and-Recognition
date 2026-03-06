@@ -1,0 +1,744 @@
+/* ============================================
+   BASE STYLES
+   CSS Reset, Typography, and Global Styles
+   ============================================ */
+
+/* ============================================
+   1. CSS RESET
+   ============================================ */
+
+/* Box sizing rules */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* Root element */
+html {
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
+
+/* Body defaults */
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 1rem;
+  line-height: 1.6;
+  color: var(--forensic-gray-100);
+  background-color: var(--forensic-bg);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Remove default list styles */
+ul,
+ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Remove default link styles */
+a {
+  text-decoration: none;
+  color: inherit;
+  background-color: transparent;
+}
+
+/* Remove default button styles */
+button {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* Remove default input styles */
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  margin: 0;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+}
+
+/* Remove default fieldset styles */
+fieldset {
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+legend {
+  padding: 0;
+}
+
+/* Remove default image styles */
+img,
+picture,
+video,
+canvas,
+svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Remove default table styles */
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+  width: 100%;
+}
+
+/* Remove default hr styles */
+hr {
+  border: none;
+  border-top: 1px solid var(--glass-border);
+  margin: 1rem 0;
+}
+
+/* Remove default abbr styles */
+abbr[title] {
+  text-decoration: underline dotted;
+  cursor: help;
+}
+
+/* Remove default code styles */
+code,
+kbd,
+samp,
+pre {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+}
+
+/* Remove default blockquote styles */
+blockquote {
+  margin: 0;
+  padding: 0;
+}
+
+/* Remove default address styles */
+address {
+  font-style: normal;
+}
+
+/* Remove default details/summary styles */
+details {
+  display: block;
+}
+
+summary {
+  display: list-item;
+  cursor: pointer;
+}
+
+/* Remove default template styles */
+template {
+  display: none;
+}
+
+/* Remove default hidden attribute */
+[hidden] {
+  display: none !important;
+}
+
+/* ============================================
+   2. TYPOGRAPHY - CLEANED
+   ============================================ */
+
+/* REMOVED: Fixed heading font sizes - will be replaced with fluid typography
+   Old values:
+   h1: 2.25rem (36px)
+   h2: 1.75rem (28px)
+   h3: 1.375rem (22px)
+   h4: 1.25rem (20px)
+   h5: 1.125rem (18px)
+   h6: 1rem (16px)
+*/
+
+/* Fluid Heading Sizes */
+h1 {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  color: var(--forensic-gray-50);
+  margin: 0;
+  padding: 0;
+  font-size: clamp(1.75rem, 4vw, 2.5rem);
+}
+
+h2 {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  color: var(--forensic-gray-50);
+  margin: 0;
+  padding: 0;
+  font-size: clamp(1.5rem, 3.5vw, 2rem);
+}
+
+h3 {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  color: var(--forensic-gray-50);
+  margin: 0;
+  padding: 0;
+  font-size: clamp(1.25rem, 3vw, 1.75rem);
+}
+
+h4 {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  color: var(--forensic-gray-50);
+  margin: 0;
+  padding: 0;
+  font-size: clamp(1.125rem, 2.5vw, 1.5rem);
+}
+
+h5 {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  color: var(--forensic-gray-50);
+  margin: 0;
+  padding: 0;
+  font-size: clamp(1rem, 2vw, 1.25rem);
+}
+
+h6 {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+  color: var(--forensic-gray-50);
+  margin: 0;
+  padding: 0;
+  font-size: clamp(0.875rem, 1.5vw, 1rem);
+}
+
+/* Paragraphs */
+p {
+  margin: 0;
+  padding: 0;
+  line-height: 1.6;
+}
+
+/* Strong and bold */
+strong,
+b {
+  font-weight: 700;
+}
+
+/* Emphasis and italic */
+em,
+i {
+  font-style: italic;
+}
+
+/* Small text */
+small {
+  font-size: 0.875em;
+}
+
+/* Subscript and superscript */
+sub,
+sup {
+  font-size: 0.75em;
+  line-height: 0;
+  position: relative;
+  vertical-align: baseline;
+}
+
+sub {
+  bottom: -0.25em;
+}
+
+sup {
+  top: -0.5em;
+}
+
+/* ============================================
+   3. BROWSER CONSISTENCY
+   ============================================ */
+
+/* Prevent iOS text size adjust after orientation change */
+html {
+  -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Prevent font scaling in landscape while allowing user zoom */
+body {
+  -webkit-text-size-adjust: 100%;
+  -moz-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Remove tap highlight on mobile */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Smooth scrolling for anchor links */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Remove spinner from number inputs */
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type='number'] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Remove search input cancel button */
+input[type='search']::-webkit-search-cancel-button,
+input[type='search']::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Consistent button appearance */
+button,
+[type='button'],
+[type='reset'],
+[type='submit'] {
+  -webkit-appearance: button;
+  appearance: button;
+}
+
+/* Remove default button focus outline in Firefox */
+button::-moz-focus-inner,
+[type='button']::-moz-focus-inner,
+[type='reset']::-moz-focus-inner,
+[type='submit']::-moz-focus-inner {
+  border-style: none;
+  padding: 0;
+}
+
+/* Restore focus outline */
+button:-moz-focusring,
+[type='button']:-moz-focusring,
+[type='reset']:-moz-focusring,
+[type='submit']:-moz-focusring {
+  outline: 1px dotted ButtonText;
+}
+
+/* Consistent select appearance */
+select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-color: transparent;
+}
+
+/* Remove default textarea resize handle in IE */
+textarea {
+  overflow: auto;
+  resize: vertical;
+}
+
+/* Consistent checkbox and radio appearance */
+[type='checkbox'],
+[type='radio'] {
+  box-sizing: border-box;
+  padding: 0;
+}
+
+/* Prevent overflow of long words */
+p,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  hyphens: auto;
+}
+
+/* Improve media defaults */
+img,
+picture,
+video,
+canvas,
+svg {
+  vertical-align: middle;
+}
+
+/* Remove border on images inside links */
+a img {
+  border: none;
+}
+
+/* Consistent SVG overflow */
+svg {
+  overflow: hidden;
+}
+
+/* ============================================
+   4. TEXT UTILITIES - CLEANED
+   ============================================ */
+
+/* REMOVED: Fixed text size utilities - will be replaced with fluid typography
+   Old values: .text-xs through .text-5xl with fixed rem values */
+
+/* Text Size Utility Classes */
+.text-xs {
+  font-size: clamp(0.7rem, 1.5vw, 0.75rem);
+}
+
+.text-sm {
+  font-size: clamp(0.8rem, 1.75vw, 0.875rem);
+}
+
+.text-base {
+  font-size: clamp(0.9rem, 2vw, 1rem);
+}
+
+.text-lg {
+  font-size: clamp(1rem, 2.25vw, 1.125rem);
+}
+
+.text-xl {
+  font-size: clamp(1.1rem, 2.5vw, 1.25rem);
+}
+
+.text-2xl {
+  font-size: clamp(1.25rem, 3vw, 1.5rem);
+}
+
+.text-3xl {
+  font-size: clamp(1.5rem, 3.75vw, 1.875rem);
+}
+
+.text-4xl {
+  font-size: clamp(1.75rem, 4.5vw, 2.25rem);
+}
+
+.text-5xl {
+  font-size: clamp(2rem, 6vw, 3rem);
+}
+
+/* Font weights */
+.font-light {
+  font-weight: 300;
+}
+
+.font-normal {
+  font-weight: 400;
+}
+
+.font-medium {
+  font-weight: 500;
+}
+
+.font-semibold {
+  font-weight: 600;
+}
+
+.font-bold {
+  font-weight: 700;
+}
+
+.font-extrabold {
+  font-weight: 800;
+}
+
+/* Text alignment */
+.text-left {
+  text-align: left;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.text-right {
+  text-align: right;
+}
+
+/* Text transform */
+.uppercase {
+  text-transform: uppercase;
+}
+
+.lowercase {
+  text-transform: lowercase;
+}
+
+.capitalize {
+  text-transform: capitalize;
+}
+
+/* Line height */
+.leading-none {
+  line-height: 1;
+}
+
+.leading-tight {
+  line-height: 1.25;
+}
+
+.leading-normal {
+  line-height: 1.5;
+}
+
+.leading-relaxed {
+  line-height: 1.75;
+}
+
+.leading-loose {
+  line-height: 2;
+}
+
+/* Letter spacing */
+.tracking-tight {
+  letter-spacing: -0.025em;
+}
+
+.tracking-normal {
+  letter-spacing: 0;
+}
+
+.tracking-wide {
+  letter-spacing: 0.05em;
+}
+
+.tracking-wider {
+  letter-spacing: 0.1em;
+}
+
+/* ============================================
+   5. RESPONSIVE TYPOGRAPHY - CLEANED
+   ============================================ */
+
+/* REMOVED: Root font-size changes at breakpoints - will be replaced with fluid system
+   Old approach changed html font-size at each breakpoint (15px, 14px, 13px, 17px)
+   This caused ALL rem values to change abruptly
+   New system will use clamp() for smooth scaling */
+
+/* ============================================
+   6. GLOBAL UTILITIES
+   ============================================ */
+
+/* Display */
+.block {
+  display: block;
+}
+
+.inline-block {
+  display: inline-block;
+}
+
+.inline {
+  display: inline;
+}
+
+.hidden {
+  display: none;
+}
+
+/* Visibility */
+.visible {
+  visibility: visible;
+}
+
+.invisible {
+  visibility: hidden;
+}
+
+/* Overflow */
+.overflow-hidden {
+  overflow: hidden;
+}
+
+.overflow-auto {
+  overflow: auto;
+}
+
+.overflow-scroll {
+  overflow: scroll;
+}
+
+/* Cursor */
+.cursor-pointer {
+  cursor: pointer;
+}
+
+.cursor-not-allowed {
+  cursor: not-allowed;
+}
+
+/* User select */
+.select-none {
+  user-select: none;
+}
+
+.select-text {
+  user-select: text;
+}
+
+.select-all {
+  user-select: all;
+}
+
+/* Pointer events */
+.pointer-events-none {
+  pointer-events: none;
+}
+
+.pointer-events-auto {
+  pointer-events: auto;
+}
+
+/* ============================================
+   7. ACCESSIBILITY
+   ============================================ */
+
+/* Screen reader only */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* Focus visible for keyboard navigation */
+*:focus-visible {
+  outline: 2px solid var(--forensic-accent);
+  outline-offset: 2px;
+}
+
+/* Remove focus outline for mouse users */
+*:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Skip to main content link */
+.skip-to-main {
+  position: absolute;
+  top: -100%;
+  left: 0;
+  background: var(--forensic-accent);
+  color: var(--forensic-gray-900);
+  padding: 0.75rem 1.5rem;
+  text-decoration: none;
+  z-index: 9999;
+  transition: top 0.3s;
+}
+
+.skip-to-main:focus {
+  top: 0;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  * {
+    border-color: currentColor;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Print styles */
+@media print {
+  *,
+  *::before,
+  *::after {
+    background: transparent !important;
+    color: #000 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  a,
+  a:visited {
+    text-decoration: underline;
+  }
+
+  a[href]::after {
+    content: ' (' attr(href) ')';
+  }
+
+  abbr[title]::after {
+    content: ' (' attr(title) ')';
+  }
+
+  img {
+    page-break-inside: avoid;
+  }
+
+  p,
+  h2,
+  h3 {
+    orphans: 3;
+    widows: 3;
+  }
+
+  h2,
+  h3 {
+    page-break-after: avoid;
+  }
+}

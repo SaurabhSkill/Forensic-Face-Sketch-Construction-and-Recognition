@@ -162,7 +162,7 @@ function AdminDashboard() {
 
       {/* Main Content */}
       <main className="admin-main">
-        <div className="container">
+        <div className="layout-container">
           <div className="page-header">
             <h1>Officer Management</h1>
             <button className="add-btn" onClick={() => setShowAddForm(!showAddForm)}>
