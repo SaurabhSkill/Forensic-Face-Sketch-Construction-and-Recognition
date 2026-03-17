@@ -1,6 +1,6 @@
 import os
 import json
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, LargeBinary
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, LargeBinary, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.types import TypeDecorator, TEXT
@@ -120,6 +120,43 @@ class Criminal(Base):
     witness = Column(JSONEncodedDict, nullable=True)  # {statements, credibility, contactInfo}
     
     # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+# Case Management model
+class Case(Base):
+    __tablename__ = "cases"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    case_number = Column(String(50), unique=True, nullable=False, index=True)  # e.g., "CASE-2026-001"
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    status = Column(String(50), nullable=False, default='Open')  # Open, Closed, Under Investigation
+    priority = Column(String(50), default='Medium')
+    crime_type = Column(String(100), nullable=True)
+    
+    # Associated Officer
+    officer_id = Column(Integer, index=True, nullable=False) # Foreign Key concept pointing to users.id
+    
+    # Case Details
+    incident_date = Column(DateTime, nullable=True)
+    location = Column(String(255), nullable=True)
+    
+    # Store JSON strings for relationships without complex secondary tables for MVP
+    linked_criminals = Column(String, default='[]')
+    linked_evidence = Column(String, default='[]')
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class CaseNote(Base):
+    __tablename__ = 'case_notes'
+    id = Column(Integer, primary_key=True, index=True)
+    case_id = Column(Integer, ForeignKey('cases.id', ondelete='CASCADE'), index=True)
+    author_id = Column(Integer, ForeignKey('users.id'), index=True)
+    author_name = Column(String(255), nullable=False)
+    content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

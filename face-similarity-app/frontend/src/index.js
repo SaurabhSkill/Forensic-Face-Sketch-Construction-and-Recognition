@@ -12,6 +12,8 @@ import SketchPage from './pages/SketchPage.js';
 import LoginPageV2 from './pages/LoginPageV2';
 import AboutPage from './pages/AboutPage.js';
 import ContactPage from './pages/ContactPage.js';
+import CasesPage from './pages/CasesPage.jsx';
+import CaseDetailsPage from './pages/CaseDetailsPage.jsx';
 import AdminDashboard from './pages/AdminDashboard';
 import ChangePassword from './pages/ChangePassword';
 import ProtectedRouteV2 from './components/ProtectedRouteV2';
@@ -62,6 +64,8 @@ root.render(
           <Route path="compare" element={<ComparePage />} />
           <Route path="search" element={<SearchPage />} />
           <Route path="database" element={<DatabasePage />} />
+          <Route path="cases" element={<CasesPage />} />
+          <Route path="cases/:id" element={<CaseDetailsPage />} />
           <Route path="about" element={<AboutPage />} />
           <Route path="contact" element={<ContactPage />} />
         </Route>

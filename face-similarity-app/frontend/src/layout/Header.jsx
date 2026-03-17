@@ -54,6 +54,7 @@ const Header = () => {
     { path: '/compare', label: 'Face Comparison' },
     { path: '/search', label: 'Sketch Search' },
     { path: '/database', label: 'Criminal Database' },
+    { path: '/cases', label: 'Cases' },
     { path: '/about', label: 'About' },
     { path: '/contact', label: 'Contact' }
   ];

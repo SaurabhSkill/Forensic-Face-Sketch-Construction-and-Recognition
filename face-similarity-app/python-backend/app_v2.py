@@ -1836,6 +1836,324 @@ def cache_stats_endpoint():
         "model_initialized": MODEL_INITIALIZED
     })
 
+# ============================================================================
+# CASE MANAGEMENT API ENDPOINTS
+# ============================================================================
+
+from database import Case, CaseNote
+
+@app.route('/api/cases', methods=['GET'])
+@authenticated
+def get_all_cases():
+    """Get a list of all cases"""
+    db = None
+    try:
+        db = next(get_db())
+        user = request.current_user
+        
+        # If admin, fetch all. If officer, you might want to fetch only their cases,
+        # but for simplicity, we'll fetch all or filter by officer_id if provided.
+        query = db.query(Case)
+        
+        # Optional: officer-specific filtering
+        if user.role != 'admin':
+             query = query.filter(Case.officer_id == user.id)
+            
+        cases = query.order_by(Case.created_at.desc()).all()
+        
+        cases_list = []
+        for c in cases:
+            cases_list.append({
+                "id": c.id,
+                "case_number": c.case_number,
+                "title": c.title,
+                "status": c.status,
+                "description": c.description,
+                "priority": c.priority,
+                "crime_type": c.crime_type,
+                "incident_date": c.incident_date.isoformat() if c.incident_date else None,
+                "location": c.location,
+                "officer_id": c.officer_id,
+                "created_at": c.created_at.isoformat(),
+                "updated_at": c.updated_at.isoformat() if c.updated_at else None
+            })
+            
+        return jsonify({"cases": cases_list}), 200
+        
+    except Exception as e:
+        print(f"/api/cases GET error: {e}")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route('/api/cases/<int:case_id>', methods=['GET'])
+@authenticated
+def get_case(case_id):
+    """Get details for a specific case"""
+    db = None
+    try:
+        db = next(get_db())
+        case = db.query(Case).filter(Case.id == case_id).first()
+        
+        if not case:
+            return jsonify({"error": "Case not found"}), 404
+            
+        return jsonify({
+            "case": {
+                "id": case.id,
+                "case_number": case.case_number,
+                "title": case.title,
+                "status": case.status,
+                "description": case.description,
+                "priority": case.priority,
+                "crime_type": case.crime_type,
+                "incident_date": case.incident_date.isoformat() if case.incident_date else None,
+                "location": case.location,
+                "officer_id": case.officer_id,
+                "linked_criminals": case.linked_criminals,
+                "linked_evidence": case.linked_evidence,
+                "created_at": case.created_at.isoformat(),
+                "updated_at": case.updated_at.isoformat() if case.updated_at else None
+            }
+        }), 200
+        
+    except Exception as e:
+        print(f"/api/cases/{case_id} GET error: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+@app.route('/api/cases', methods=['POST'])
+@authenticated
+def create_case():
+    """Create a new case"""
+    db = None
+    try:
+        data = request.get_json()
+        
+        if not data.get('title'):
+            return jsonify({"error": "Title is required"}), 400
+            
+        db = next(get_db())
+        user = request.current_user
+        
+        # Generate robust unique case number
+        year = datetime.utcnow().year
+        case_count = db.query(Case).count() + 1
+        case_number = f"CASE-{year}-{case_count:04d}-{str(uuid.uuid4())[:4].upper()}"
+        
+        # Parse optional dates
+        incident_date = None
+        if data.get('incident_date'):
+            try:
+                # Handle basic ISO format YYYY-MM-DD
+                incident_date = datetime.fromisoformat(data.get('incident_date').replace('Z', '+00:00'))
+            except ValueError:
+                pass
+        
+        new_case = Case(
+            case_number=data.get('case_number', case_number),
+            title=data.get('title'),
+            description=data.get('description', ''),
+            status=data.get('status', 'Open'),
+            priority=data.get('priority', 'Medium'),
+            crime_type=data.get('crime_type'),
+            officer_id=user.id,
+            incident_date=incident_date,
+            location=data.get('location', ''),
+            linked_criminals=json.dumps(data.get('linked_criminals', [])),
+            linked_evidence=json.dumps(data.get('linked_evidence', []))
+        )
+        
+        db.add(new_case)
+        db.commit()
+        db.refresh(new_case)
+        
+        return jsonify({
+            "message": "Case created successfully",
+            "case_id": new_case.id,
+            "case_number": new_case.case_number
+        }), 201
+        
+    except Exception as e:
+        if db:
+            db.rollback()
+        print(f"/api/cases POST error: {e}")
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route('/api/cases/<int:case_id>', methods=['PUT', 'PATCH'])
+@authenticated
+def update_case(case_id):
+    """Update an existing case"""
+    db = None
+    try:
+        data = request.get_json()
+        db = next(get_db())
+        
+        case = db.query(Case).filter(Case.id == case_id).first()
+        
+        if not case:
+            return jsonify({"error": "Case not found"}), 404
+            
+        # Update fields if provided
+        if 'title' in data:
+            case.title = data['title']
+        if 'description' in data:
+            case.description = data['description']
+        if 'status' in data:
+            case.status = data['status']
+        if 'priority' in data:
+            case.priority = data['priority']
+        if 'crime_type' in data:
+            case.crime_type = data['crime_type']
+        if 'location' in data:
+            case.location = data['location']
+        if 'linked_criminals' in data:
+            case.linked_criminals = data['linked_criminals']
+        if 'linked_evidence' in data:
+            case.linked_evidence = data['linked_evidence']
+            
+        case.updated_at = datetime.utcnow()
+        
+        db.commit()
+        
+        return jsonify({"message": "Case updated successfully"}), 200
+        
+    except Exception as e:
+        if db:
+            db.rollback()
+        print(f"/api/cases/{case_id} PUT/PATCH error: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route('/api/cases/<int:case_id>', methods=['DELETE'])
+@authenticated
+def delete_case(case_id):
+    """Delete a case"""
+    db = None
+    try:
+        db = next(get_db())
+        case = db.query(Case).filter(Case.id == case_id).first()
+        
+        if not case:
+            return jsonify({"error": "Case not found"}), 404
+            
+        db.delete(case)
+        db.commit()
+        
+        return jsonify({"message": "Case deleted successfully"}), 200
+        
+    except Exception as e:
+        if db:
+            db.rollback()
+        print(f"/api/cases/{case_id} DELETE error: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+# ============================================================================
+# CASE NOTES API ENDPOINTS
+# ============================================================================
+
+@app.route('/api/cases/<int:case_id>/notes', methods=['GET'])
+@authenticated
+def get_case_notes(case_id):
+    """Get all notes for a specific case"""
+    db = None
+    try:
+        db = next(get_db())
+        case = db.query(Case).filter(Case.id == case_id).first()
+        if not case:
+            return jsonify({"error": "Case not found"}), 404
+            
+        notes = db.query(CaseNote).filter(CaseNote.case_id == case_id).order_by(CaseNote.created_at.desc()).all()
+        
+        notes_list = []
+        for n in notes:
+            notes_list.append({
+                "id": n.id,
+                "case_id": n.case_id,
+                "author_id": n.author_id,
+                "author_name": n.author_name,
+                "content": n.content,
+                "created_at": n.created_at.isoformat()
+            })
+            
+        return jsonify({"notes": notes_list}), 200
+        
+    except Exception as e:
+        print(f"/api/cases/{case_id}/notes GET error: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
+
+@app.route('/api/cases/<int:case_id>/notes', methods=['POST'])
+@authenticated
+def create_case_note(case_id):
+    """Create a new note for a specific case"""
+    db = None
+    try:
+        data = request.get_json()
+        if not data.get('content'):
+            return jsonify({"error": "Content is required"}), 400
+            
+        db = next(get_db())
+        user = request.current_user
+        
+        case = db.query(Case).filter(Case.id == case_id).first()
+        if not case:
+            return jsonify({"error": "Case not found"}), 404
+            
+        # Optional: verify user has access to case
+        
+        new_note = CaseNote(
+            case_id=case_id,
+            author_id=user.id,
+            author_name=data.get('author_name', user.full_name or user.email.split('@')[0]),  # default to full name
+            content=data.get('content')
+        )
+        
+        db.add(new_note)
+        case.updated_at = datetime.utcnow() # Update the case's modified time
+        db.commit()
+        db.refresh(new_note)
+        
+        return jsonify({
+            "message": "Note added successfully",
+            "note": {
+                "id": new_note.id,
+                "case_id": new_note.case_id,
+                "author_id": new_note.author_id,
+                "author_name": new_note.author_name,
+                "content": new_note.content,
+                "created_at": new_note.created_at.isoformat()
+            }
+        }), 201
+        
+    except Exception as e:
+        if db:
+            db.rollback()
+        print(f"/api/cases/{case_id}/notes POST error: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if db:
+            db.close()
+
 
 # ============================================================================
 # HEALTH CHECK
