@@ -5,8 +5,8 @@
   "workspaces": [],
   "scripts": {
     "dev": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\"",
-    "dev:backend": "cd \"face-similarity-app\\python-backend\" && python app_v2.py",
-    "dev:frontend": "cd \"face-similarity-app\\frontend\" && npm start"
+    "dev:backend": "cd face-similarity-app/python-backend && python3.11 app_v2.py",
+    "dev:frontend": "cd face-similarity-app/frontend && npm start"
   },
   "dependencies": {
     "dotenv": "^16.4.5"
