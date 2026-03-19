@@ -13,12 +13,14 @@ DATABASE_URL = os.environ.get(
 )
 
 
+from sqlalchemy.pool import NullPool
+
 # Create engine with better connection pool settings
 if DATABASE_URL.startswith('sqlite'):
     # SQLite specific settings
     engine = create_engine(
         DATABASE_URL,
-        pool_pre_ping=True,
+        poolclass=NullPool,
         connect_args={"check_same_thread": False}
     )
 else:

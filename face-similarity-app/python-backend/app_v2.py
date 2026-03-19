@@ -2193,5 +2193,6 @@ if __name__ == '__main__':
     print("=" * 60 + "\n")
     sys.stdout.flush()
     
-    app.run(debug=True, host='0.0.0.0', port=port)
+    # Run with debug=False to prevent Werkzeug reloader child-process deadlocks with TensorFlow/Keras
+    app.run(debug=False, host='0.0.0.0', port=port, threaded=True)
 
