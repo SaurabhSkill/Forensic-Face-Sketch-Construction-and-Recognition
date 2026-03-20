@@ -31,7 +31,7 @@ from auth_v2 import (
     officer_only,
     authenticated
 )
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Import utility functions from modular structure
 from utils.file_utils import (
@@ -61,6 +61,7 @@ from preprocessing.sketch_photo_preprocess import (
 )
 
 # Import embedding service functions from modular structure
+from services.s3_service import upload_criminal_photo, delete_criminal_photo, get_signed_url
 from services.embedding_service import (
     initialize_models,
     is_models_initialized,
@@ -174,17 +175,22 @@ def precompute_database_embeddings():
                     # Compute new dual embeddings
                     print(f"  Computing dual embeddings for {criminal.criminal_id}...")
                     
-                    # Validate photo data exists
-                    if not criminal.photo_data:
-                        print(f"  [ERROR] No photo data for {criminal.criminal_id}")
+                    # Validate photo key exists
+                    if not criminal.photo_key:
+                        print(f"  [ERROR] No photo_key for {criminal.criminal_id}")
                         failed_count += 1
                         continue
                     
-                    # Save photo to temp_uploads folder
+                    # Download photo from S3 to temp file
                     temp_path = generate_temp_filepath(original_filename=criminal.photo_filename or 'criminal.jpg', prefix='criminal')
                     try:
-                        with open(temp_path, 'wb') as f:
-                            f.write(criminal.photo_data)
+                        signed_url = get_signed_url(criminal.photo_key)
+                        if not signed_url:
+                            print(f"  [ERROR] Could not generate signed URL for {criminal.criminal_id}")
+                            failed_count += 1
+                            continue
+                        import urllib.request
+                        urllib.request.urlretrieve(signed_url, temp_path)
                         
                         # Validate temp file was created
                         if not os.path.exists(temp_path):
@@ -464,7 +470,7 @@ def admin_login_step2():
             return jsonify({"error": "User not found"}), 404
         
         # Update last login
-        user.last_login = datetime.utcnow()
+        user.last_login = datetime.now(timezone.utc)
         db.commit()
         
         # Generate JWT token
@@ -568,7 +574,7 @@ def officer_login():
             return jsonify({"error": "Invalid email or password"}), 401
         
         # Update last login
-        user.last_login = datetime.utcnow()
+        user.last_login = datetime.now(timezone.utc)
         db.commit()
         
         # Generate JWT token
@@ -627,7 +633,7 @@ def change_password():
         
         # Update password
         db_user.password_hash = hash_password(new_password)
-        db_user.is_temp_password = 0
+        db_user.is_temp_password = False
         
         db.commit()
         
@@ -752,7 +758,7 @@ def add_officer():
             officer_id=officer_id,
             password_hash=password_hash,
             role='officer',
-            is_temp_password=1
+            is_temp_password=True
         )
         
         db.add(new_officer)
@@ -809,7 +815,7 @@ def reset_officer_password(officer_id):
         
         # Update officer
         officer.password_hash = password_hash
-        officer.is_temp_password = 1
+        officer.is_temp_password = True
         
         db.commit()
         
@@ -889,6 +895,7 @@ def get_criminals():
                 "sex": criminal.sex,
                 "nationality": criminal.nationality,
                 "ethnicity": criminal.ethnicity,
+                "photo_key": criminal.photo_key,
                 "photo_filename": criminal.photo_filename,
                 "appearance": criminal.appearance,
                 "locations": criminal.locations,
@@ -943,11 +950,20 @@ def add_criminal():
         
         # Read photo data
         photo_data = photo_file.read()
-        
+        photo_filename = photo_file.filename or "photo.jpg"
+
+        # Upload photo to S3 (private bucket) — store object key, not URL
+        photo_key = None
+        criminal_id_str = profile_data.get('criminal_id')
+        try:
+            photo_key = upload_criminal_photo(criminal_id_str, photo_data, photo_filename)
+        except Exception as upload_err:
+            print(f"  [WARNING] S3 upload failed: {upload_err} — continuing without photo_key")
+
         # Create new criminal record
         db = next(get_db())
         new_criminal = Criminal(
-            criminal_id=profile_data.get('criminal_id'),
+            criminal_id=criminal_id_str,
             status=profile_data.get('status'),
             full_name=profile_data.get('full_name'),
             aliases=profile_data.get('aliases'),
@@ -955,8 +971,8 @@ def add_criminal():
             sex=profile_data.get('sex'),
             nationality=profile_data.get('nationality'),
             ethnicity=profile_data.get('ethnicity'),
-            photo_data=photo_data,
-            photo_filename=photo_file.filename,
+            photo_key=photo_key,
+            photo_filename=photo_filename,
             appearance=profile_data.get('appearance'),
             locations=profile_data.get('locations'),
             summary=profile_data.get('summary'),
@@ -1036,7 +1052,8 @@ def add_criminal():
 
 @app.route('/api/criminals/<int:criminal_id>/photo', methods=['GET'])
 def get_criminal_photo(criminal_id):
-    """Get criminal photo by ID (public endpoint for img tags)"""
+    """Generate a signed URL for the criminal's S3 photo and redirect to it."""
+    from flask import redirect
     db = None
     try:
         db = next(get_db())
@@ -1045,11 +1062,14 @@ def get_criminal_photo(criminal_id):
         if not criminal:
             return jsonify({"error": "Criminal not found"}), 404
         
-        return send_file(
-            io.BytesIO(criminal.photo_data),
-            mimetype='image/jpeg',
-            as_attachment=False
-        )
+        if not criminal.photo_key:
+            return jsonify({"error": "No photo available"}), 404
+
+        signed_url = get_signed_url(criminal.photo_key)
+        if not signed_url:
+            return jsonify({"error": "Failed to generate photo URL"}), 500
+
+        return redirect(signed_url)
         
     except Exception as e:
         print(f"/api/criminals/{criminal_id}/photo error: {e}")
@@ -1082,6 +1102,8 @@ def get_criminal_by_id(criminal_id):
                 "sex": criminal.sex,
                 "nationality": criminal.nationality,
                 "ethnicity": criminal.ethnicity,
+                "photo_key": criminal.photo_key,
+                "photo_url": get_signed_url(criminal.photo_key) if criminal.photo_key else None,
                 "photo_filename": criminal.photo_filename,
                 "appearance": criminal.appearance,
                 "locations": criminal.locations,
@@ -1219,11 +1241,16 @@ def search_criminals():
                     arcface_similarity = candidate['arcface_similarity']
                     facenet_similarity = candidate['facenet_similarity']
                     
-                    # Save criminal photo to temp file
-                    criminal_photo_path = save_bytes_to_temp(
-                        criminal.photo_data,
-                        criminal.photo_filename or 'criminal.jpg'
+                    # Download criminal photo to temp file via S3 signed URL
+                    import urllib.request as _urlreq
+                    criminal_photo_path = generate_temp_filepath(
+                        original_filename=criminal.photo_filename or 'criminal.jpg', prefix='crim'
                     )
+                    _signed = get_signed_url(criminal.photo_key)
+                    if not _signed:
+                        print(f"    [WARNING] Could not get signed URL for {criminal.full_name}, skipping")
+                        continue
+                    _urlreq.urlretrieve(_signed, criminal_photo_path)
                     
                     try:
                         # Extract aligned face from criminal photo
@@ -1913,8 +1940,7 @@ def get_case(case_id):
                 "incident_date": case.incident_date.isoformat() if case.incident_date else None,
                 "location": case.location,
                 "officer_id": case.officer_id,
-                "linked_criminals": case.linked_criminals,
-                "linked_evidence": case.linked_evidence,
+                "linked_criminals": [c.criminal_id for c in case.criminals],
                 "created_at": case.created_at.isoformat(),
                 "updated_at": case.updated_at.isoformat() if case.updated_at else None
             }
@@ -1942,7 +1968,7 @@ def create_case():
         user = request.current_user
         
         # Generate robust unique case number
-        year = datetime.utcnow().year
+        year = datetime.now(timezone.utc).year
         case_count = db.query(Case).count() + 1
         case_number = f"CASE-{year}-{case_count:04d}-{str(uuid.uuid4())[:4].upper()}"
         
@@ -1965,11 +1991,16 @@ def create_case():
             officer_id=user.id,
             incident_date=incident_date,
             location=data.get('location', ''),
-            linked_criminals=json.dumps(data.get('linked_criminals', [])),
-            linked_evidence=json.dumps(data.get('linked_evidence', []))
         )
         
         db.add(new_case)
+
+        # Link criminals via association table
+        criminal_ids = data.get('linked_criminals', [])
+        if criminal_ids:
+            criminals = db.query(Criminal).filter(Criminal.criminal_id.in_(criminal_ids)).all()
+            new_case.criminals.extend(criminals)
+
         db.commit()
         db.refresh(new_case)
         
@@ -2018,11 +2049,11 @@ def update_case(case_id):
         if 'location' in data:
             case.location = data['location']
         if 'linked_criminals' in data:
-            case.linked_criminals = data['linked_criminals']
-        if 'linked_evidence' in data:
-            case.linked_evidence = data['linked_evidence']
+            # Replace association table entries
+            criminals = db.query(Criminal).filter(Criminal.criminal_id.in_(data['linked_criminals'])).all()
+            case.criminals = criminals
             
-        case.updated_at = datetime.utcnow()
+        case.updated_at = datetime.now(timezone.utc)
         
         db.commit()
         
@@ -2129,7 +2160,7 @@ def create_case_note(case_id):
         )
         
         db.add(new_note)
-        case.updated_at = datetime.utcnow() # Update the case's modified time
+        case.updated_at = datetime.now(timezone.utc) # Update the case's modified time
         db.commit()
         db.refresh(new_note)
         
@@ -2165,7 +2196,7 @@ def health_check():
     return jsonify({
         "status": "healthy",
         "service": "FaceFind Forensics API v2",
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }), 200
 
 

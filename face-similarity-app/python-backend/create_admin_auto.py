@@ -36,7 +36,7 @@ def create_admin():
             officer_id=admin_officer_id,
             password_hash=password_hash,
             role='admin',
-            is_temp_password=0
+            is_temp_password=False,
         )
         
         db.add(admin_user)
@@ -48,7 +48,7 @@ def create_admin():
         print(f"Email: {admin_email}")
         print(f"Password: {admin_password}")
         print(f"Name: {admin_name}")
-        print(f"Role: admin")
+        print("Role: admin")
         print("=" * 60)
         print("\nYou can now login with these credentials.")
         print("Admin login requires OTP verification.")

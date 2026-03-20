@@ -11,7 +11,7 @@ import string
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from flask import request, jsonify
 from database import get_db, User, OTP
@@ -61,8 +61,8 @@ def generate_token(user_id: int, email: str, role: str) -> str:
         'user_id': user_id,
         'email': email,
         'role': role,
-        'exp': datetime.utcnow() + timedelta(hours=JWT_EXPIRATION_HOURS),
-        'iat': datetime.utcnow()
+        'exp': datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS),
+        'iat': datetime.now(timezone.utc)
     }
     token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
     return token
@@ -183,7 +183,7 @@ def store_otp(user_id: int, otp: str, db) -> bool:
         otp_hash = hash_password(otp)
         
         # Calculate expiration time
-        expires_at = datetime.utcnow() + timedelta(minutes=OTP_EXPIRATION_MINUTES)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=OTP_EXPIRATION_MINUTES)
         
         # Invalidate any existing OTPs for this user
         db.query(OTP).filter(OTP.user_id == user_id, OTP.is_used == 0).update({'is_used': 1})
@@ -219,7 +219,11 @@ def verify_otp(user_id: int, otp: str, db) -> bool:
             return False
         
         # Check if OTP has expired
-        if datetime.utcnow() > otp_record.expires_at:
+        # Handle both timezone-aware (PostgreSQL) and naive (SQLite) datetimes
+        expires = otp_record.expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > expires:
             otp_record.is_used = 1  # Mark as used (expired)
             db.commit()
             return False
