@@ -186,7 +186,7 @@ def store_otp(user_id: int, otp: str, db) -> bool:
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=OTP_EXPIRATION_MINUTES)
         
         # Invalidate any existing OTPs for this user
-        db.query(OTP).filter(OTP.user_id == user_id, OTP.is_used == 0).update({'is_used': 1})
+        db.query(OTP).filter(OTP.user_id == user_id, OTP.is_used == False).update({'is_used': True})
         
         # Create new OTP record
         new_otp = OTP(
@@ -212,7 +212,7 @@ def verify_otp(user_id: int, otp: str, db) -> bool:
         # Get the latest unused OTP for this user
         otp_record = db.query(OTP).filter(
             OTP.user_id == user_id,
-            OTP.is_used == 0
+            OTP.is_used == False
         ).order_by(OTP.created_at.desc()).first()
         
         if not otp_record:
@@ -224,14 +224,14 @@ def verify_otp(user_id: int, otp: str, db) -> bool:
         if expires.tzinfo is None:
             expires = expires.replace(tzinfo=timezone.utc)
         if datetime.now(timezone.utc) > expires:
-            otp_record.is_used = 1  # Mark as used (expired)
+            otp_record.is_used = True  # Mark as used (expired)
             db.commit()
             return False
         
         # Verify OTP
         if verify_password(otp, otp_record.otp_hash):
             # Mark OTP as used
-            otp_record.is_used = 1
+            otp_record.is_used = True
             db.commit()
             return True
         
