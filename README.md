@@ -41,7 +41,7 @@ A complete forensic face matching system with role-based authentication, crimina
 
 Before you begin, ensure you have the following installed:
 
-- **Python 3.10+** - [Download Python](https://www.python.org/downloads/)
+- **Python 3.11** - [Download Python](https://www.python.org/downloads/)
 - **Node.js 16+** - [Download Node.js](https://nodejs.org/)
 - **Git** - [Download Git](https://git-scm.com/)
 

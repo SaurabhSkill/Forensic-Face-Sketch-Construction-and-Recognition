@@ -9,7 +9,7 @@ echo "Step 1: Setting up Python backend..."
 cd face-similarity-app/python-backend
 
 echo "Creating virtual environment..."
-python3 -m venv .venv
+python3.11 -m venv .venv
 
 echo "Activating virtual environment..."
 source .venv/bin/activate
