@@ -5,7 +5,7 @@
   "workspaces": [],
   "scripts": {
     "dev": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\"",
-    "dev:backend": "cd face-similarity-app/python-backend && .venv\\Scripts\\python app_v2.py",
+    "dev:backend": "cd face-similarity-app/python-backend && python app_v2.py",
     "dev:frontend": "cd face-similarity-app/frontend && npm start"
   },
   "dependencies": {
