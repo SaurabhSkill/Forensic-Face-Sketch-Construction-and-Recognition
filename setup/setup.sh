@@ -8,14 +8,21 @@ echo
 echo "Step 1: Setting up Python backend..."
 cd face-similarity-app/python-backend
 
-echo "Creating virtual environment..."
+if [ -d ".venv" ]; then
+    echo "Removing old virtual environment..."
+    rm -rf .venv
+fi
+
+echo "Creating virtual environment with Python 3.11..."
 python3.11 -m venv .venv
 
 echo "Activating virtual environment..."
 source .venv/bin/activate
 
-echo "Installing Python dependencies..."
+echo "Upgrading pip..."
 pip install --upgrade pip
+
+echo "Installing Python dependencies..."
 pip install -r requirements.txt
 
 echo
@@ -38,9 +45,8 @@ echo "Setup Complete!"
 echo "========================================"
 echo
 echo "Next steps:"
-echo "1. (Optional) Copy .env.example files to .env if you need custom configuration"
+echo "1. Copy .env.example to .env and fill in your credentials"
 echo "2. Run: npm run dev"
 echo "3. Access frontend at http://localhost:3000"
 echo "4. Access backend API at http://localhost:5001"
 echo
-echo "Note: Database (SQLite) will be created automatically on first run"
