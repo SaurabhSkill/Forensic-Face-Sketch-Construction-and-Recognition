@@ -111,7 +111,16 @@ def check_connection() -> bool:
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
+        print("✅ Connected to database successfully")
         return True
-    except Exception as exc:  # pragma: no cover
-        print(f"[DB] Connection check failed: {exc}")
+    except Exception as exc:
+        print(f"❌ Failed to connect to database: {exc}", flush=True)
         return False
+
+
+# ---------------------------------------------------------------------------
+# Startup connection check — runs once when this module is first imported.
+# Prints a clear terminal message so both local and EC2 environments confirm
+# the DB is reachable before the Flask app begins serving requests.
+# ---------------------------------------------------------------------------
+check_connection()
