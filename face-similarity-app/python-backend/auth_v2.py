@@ -46,12 +46,43 @@ def hash_password(password: str) -> str:
     return hashed.decode('utf-8')
 
 
-def verify_password(password: str, hashed_password: str) -> bool:
-    """Verify a password against its hash"""
+def verify_password(password: str, hashed_password) -> bool:
+    """
+    Verify a password against its bcrypt hash.
+
+    Handles both str and bytes coming from the DB (Supabase/PostgreSQL can
+    return either depending on the column type and SQLAlchemy version).
+    Also strips accidental b'...' string wrapping that can appear when a
+    bytes repr is stored as text.
+    """
     try:
-        return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
+        # --- normalise the plain-text password to bytes ---
+        if isinstance(password, bytes):
+            password_bytes = password
+        else:
+            password_bytes = password.encode('utf-8')
+
+        # --- normalise the stored hash to bytes ---
+        if isinstance(hashed_password, bytes):
+            hash_bytes = hashed_password
+        else:
+            # Strip accidental b'...' wrapping e.g. "b'$2b$12$...'"
+            h = hashed_password.strip()
+            if h.startswith("b'") and h.endswith("'"):
+                h = h[2:-1]
+            elif h.startswith('b"') and h.endswith('"'):
+                h = h[2:-1]
+            hash_bytes = h.encode('utf-8')
+
+        # bcrypt hash must start with $2b$ or $2a$ — catch corrupt DB values early
+        if not hash_bytes.startswith((b'$2b$', b'$2a$', b'$2y$')):
+            print(f"[AUTH] ❌ Stored hash has unexpected format: {hash_bytes[:10]!r}")
+            return False
+
+        return bcrypt.checkpw(password_bytes, hash_bytes)
+
     except Exception as e:
-        print(f"Password verification error: {e}")
+        print(f"[AUTH] ❌ Password verification error: {e}", flush=True)
         return False
 
 
