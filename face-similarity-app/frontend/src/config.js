@@ -1,8 +1,15 @@
-// API Configuration
-// Set REACT_APP_API_URL in your .env file to point to the backend.
-// Local:  REACT_APP_API_URL=http://localhost:5001
-// EC2:    REACT_APP_API_URL=http://<your-ec2-public-ip>:5001
-export const API_BASE_URL =
-  process.env.REACT_APP_API_URL ||
-  process.env.REACT_APP_API_BASE_URL ||   // legacy fallback — keep for safety
-  'http://localhost:5001';
+
+
+const API_BASE_URL = process.env.REACT_APP_API_URL;
+
+if (!API_BASE_URL) {
+  console.error(
+    '[config] REACT_APP_API_URL is not set. ' +
+    'Create face-similarity-app/frontend/.env and add: ' +
+    'REACT_APP_API_URL=http://<backend-host>:5001'
+  );
+}
+
+console.log('[config] API_BASE_URL:', API_BASE_URL);
+
+export { API_BASE_URL };
