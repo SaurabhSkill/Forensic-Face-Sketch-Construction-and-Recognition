@@ -281,25 +281,32 @@
   font-size: 14px;
 }
 
-/* Grid Layout */
+/* Grid Layout — 3 columns desktop, 2 tablet, 1 mobile */
 .criminals-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 1.5rem;
+  align-items: start;
 }
 
-/* Responsive Design */
-@media (max-width: 768px) {
+/* Tablet: 2 columns */
+@media (max-width: 1024px) {
+  .criminals-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Mobile: 1 column */
+@media (max-width: 640px) {
   .criminals-grid {
     grid-template-columns: 1fr;
+    gap: 1rem;
   }
 
   .criminal-photo-section {
     height: 200px;
   }
-}
 
-@media (max-width: 480px) {
   .criminal-info-section {
     padding: 16px;
   }

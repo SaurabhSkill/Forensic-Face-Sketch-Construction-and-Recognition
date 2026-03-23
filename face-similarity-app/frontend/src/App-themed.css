@@ -509,8 +509,9 @@ body {
 .tab-content {
   animation: fadeIn 0.3s ease;
   padding: clamp(1rem, 2vw, 2rem);
-  max-width: 1400px;
+  max-width: 1200px;
   margin: 0 auto;
+  width: 100%;
 }
 
 /* REMOVED: Tab content layout - will be replaced with responsive system */
@@ -683,13 +684,21 @@ body {
   gap: 1rem;
 }
 
-/* Comparison Container */
+/* Comparison Container — centered column, max-width constrained */
 .comparison-container {
-  display: grid;
-  grid-template-columns: 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 2rem;
-  max-width: 100%;
+  max-width: 1200px;
   margin: 0 auto;
+  width: 100%;
+}
+
+/* Upload panel inside comparison — keep it compact, don't stretch full width */
+.comparison-container .upload-section {
+  max-width: 640px;
+  margin: 0 auto;
+  width: 100%;
 }
 
 /* Search Container */

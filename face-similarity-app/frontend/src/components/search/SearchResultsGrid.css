@@ -50,12 +50,13 @@
   font-weight: 500;
 }
 
-/* Matches Grid */
+/* Matches Grid — 3 columns desktop, 2 tablet, 1 mobile */
 .matches-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 24px;
   padding: 0;
+  align-items: start;
 }
 
 /* No Matches State */
@@ -111,14 +112,19 @@
 }
 
 /* Responsive Design */
-@media (max-width: 1200px) {
+@media (max-width: 1024px) {
   .matches-grid {
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(2, 1fr);
     gap: 20px;
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 640px) {
+  .matches-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
   .results-title {
     font-size: 22px;
     flex-direction: column;
@@ -131,11 +137,6 @@
 
   .results-subtitle {
     font-size: 12px;
-  }
-
-  .matches-grid {
-    grid-template-columns: 1fr;
-    gap: 20px;
   }
 
   .no-matches-content {

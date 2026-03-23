@@ -2,6 +2,8 @@
 
 .forensic-report-container {
   width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
   padding: 20px 0;
   animation: fadeIn 0.5s ease-in;
 }
@@ -19,8 +21,6 @@
 
 .forensic-report-dashboard {
   width: 100%;
-  max-width: 1400px;
-  margin: 0 auto;
   background: linear-gradient(135deg, var(--forensic-bg) 0%, var(--forensic-card) 100%);
   border-radius: var(--radius-xl);
   border: 2px solid var(--glass-border);
@@ -110,15 +110,15 @@
   border: 1px solid var(--glass-border);
 }
 
-/* Dashboard Grid */
+/* Dashboard Grid — 40/60 split: score left, analysis right */
 .dashboard-grid {
   display: grid;
-  grid-template-columns: minmax(280px, 400px) 1fr;
+  grid-template-columns: 2fr 3fr;
   gap: 0;
   min-height: 600px;
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 900px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
     min-height: auto;
@@ -316,11 +316,7 @@
 }
 
 /* Responsive Design */
-@media (max-width: 992px) {
-  .dashboard-grid {
-    grid-template-columns: 1fr;
-  }
-
+@media (max-width: 900px) {
   .overall-score-section {
     border-right: none;
     border-bottom: 2px solid var(--glass-border);
