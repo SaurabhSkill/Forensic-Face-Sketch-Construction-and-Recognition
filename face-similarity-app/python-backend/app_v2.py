@@ -1137,24 +1137,37 @@ def get_criminal_by_id(criminal_id):
 @app.route('/api/criminals/<int:criminal_id>', methods=['DELETE'])
 @authenticated
 def delete_criminal(criminal_id):
-    """Delete a criminal from the database"""
+    """Delete a criminal from the database and remove their photo from S3."""
     db = None
     try:
         db = next(get_db())
         criminal = db.query(Criminal).filter(Criminal.id == criminal_id).first()
-        
+
         if not criminal:
             return jsonify({"error": "Criminal not found"}), 404
-        
+
+        # --- S3 cleanup (before DB delete so we still have the key) ---
+        photo_key = criminal.photo_key
+        if photo_key:
+            deleted = delete_criminal_photo(criminal.criminal_id, photo_key)
+            if deleted:
+                print(f"[S3] Deleted photo for {criminal.criminal_id}: {photo_key}", flush=True)
+            else:
+                # Log but do not abort — DB record must still be removed
+                print(f"[S3] WARNING: Could not delete photo for {criminal.criminal_id}: {photo_key}", flush=True)
+        else:
+            print(f"[S3] No photo_key for {criminal.criminal_id}, skipping S3 delete", flush=True)
+
+        # --- DB delete ---
         db.delete(criminal)
         db.commit()
-        
+
         return jsonify({"message": "Criminal deleted successfully"}), 200
-        
+
     except Exception as e:
         if db:
             db.rollback()
-        print(f"/api/criminals/{criminal_id} DELETE error: {e}")
+        print(f"/api/criminals/{criminal_id} DELETE error: {e}", flush=True)
         return jsonify({"error": str(e)}), 500
     finally:
         if db:
