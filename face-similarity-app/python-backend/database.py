@@ -111,10 +111,10 @@ def check_connection() -> bool:
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        print("✅ Connected to database successfully")
+        print("[DB] Connected to database successfully", flush=True)
         return True
     except Exception as exc:
-        print(f"❌ Failed to connect to database: {exc}", flush=True)
+        print(f"[DB] Failed to connect to database: {exc}", flush=True)
         return False
 
 
