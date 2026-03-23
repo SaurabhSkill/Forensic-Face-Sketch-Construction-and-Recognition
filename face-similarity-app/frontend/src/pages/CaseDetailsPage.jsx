@@ -35,7 +35,6 @@ const DUMMY_EVIDENCE = [
 const statusCls = s => s === 'Open' ? 'cd-badge-open' : s === 'Under Investigation' ? 'cd-badge-inv' : 'cd-badge-closed';
 const priorityCls = p => ({ low:'cd-pri-low', medium:'cd-pri-med', high:'cd-pri-high', critical:'cd-pri-crit' })[(p||'medium').toLowerCase()] || 'cd-pri-med';
 const fmtDate = d => d ? new Date(d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '—';
-const fmtTime = d => d ? new Date(d).toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit' }) : '';
 const fmtDateTime = d => d ? new Date(d).toLocaleString('en-US', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
 
 const fileIcon = type => {

@@ -222,7 +222,7 @@ function SketchCanvas() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedId, elements, undo, redo, deleteEl, updateEl]);
+  }, [selectedId, elements, undo, redo, deleteEl, updateEl, checkpoint, patch]);
 
   // ── Export ─────────────────────────────────────────────────────────────────
   const doExport = useCallback(async (download = false, format = 'png') => {
