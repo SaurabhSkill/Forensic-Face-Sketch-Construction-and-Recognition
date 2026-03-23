@@ -47,13 +47,12 @@ export default function LoginPageV2() {
     setLoading(true);
 
     try {
-      const response = await axios.post(
-        API_BASE_URL + "/api/auth/admin/login-step1",
-        {
-          email,
-          password,
-        }
-      );
+      const url = API_BASE_URL + "/api/auth/admin/login-step1";
+      console.log("[Login] Sending admin login request to:", url);
+
+      const response = await axios.post(url, { email, password });
+
+      console.log("[Login] Admin step-1 response:", response.data);
 
       setUserId(response.data.user_id);
       setShowOtpScreen(true);
@@ -64,6 +63,7 @@ export default function LoginPageV2() {
         setOtpDev(response.data.otp_dev);
       }
     } catch (err) {
+      console.error("[Login] Admin step-1 error:", err.response?.data || err.message);
       setError(err.response?.data?.error || "Login failed. Try again.");
     } finally {
       setLoading(false);
@@ -103,13 +103,12 @@ export default function LoginPageV2() {
     setLoading(true);
 
     try {
-      const response = await axios.post(
-        API_BASE_URL + "/api/auth/officer/login",
-        {
-          email,
-          password,
-        }
-      );
+      const url = API_BASE_URL + "/api/auth/officer/login";
+      console.log("[Login] Sending officer login request to:", url);
+
+      const response = await axios.post(url, { email, password });
+
+      console.log("[Login] Officer login response:", response.data);
 
       localStorage.setItem("token", response.data.token);
       localStorage.setItem("user", JSON.stringify(response.data.user));
@@ -120,6 +119,7 @@ export default function LoginPageV2() {
         navigate("/");
       }
     } catch (err) {
+      console.error("[Login] Officer login error:", err.response?.data || err.message);
       setError(err.response?.data?.error || "Login failed. Try again.");
     } finally {
       setLoading(false);

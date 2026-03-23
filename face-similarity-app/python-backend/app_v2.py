@@ -388,12 +388,16 @@ def admin_login_step1():
     db = None
     try:
         data = request.get_json()
-        
+
+        print("[LOGIN] Admin login-step1 HIT", flush=True)
+
         if not data.get('email') or not data.get('password'):
             return jsonify({"error": "Email and password are required"}), 400
-        
+
         email = data.get('email').lower().strip()
         password = data.get('password')
+
+        print(f"[LOGIN] Admin email: {email}", flush=True)
         
         db = next(get_db())
         
@@ -405,9 +409,10 @@ def admin_login_step1():
         
         # Verify password
         if not verify_password(password, user.password_hash):
+            print(f"[LOGIN] Admin password mismatch for: {email}", flush=True)
             return jsonify({"error": "Invalid email or password"}), 401
-        
-        # Generate OTP
+
+        print(f"[LOGIN] Admin password verified for: {email}", flush=True)
         otp = generate_otp()
         
         # Store OTP in database
@@ -554,12 +559,16 @@ def officer_login():
     db = None
     try:
         data = request.get_json()
-        
+
+        print("[LOGIN] Officer login HIT", flush=True)
+
         if not data.get('email') or not data.get('password'):
             return jsonify({"error": "Email and password are required"}), 400
-        
+
         email = data.get('email').lower().strip()
         password = data.get('password')
+
+        print(f"[LOGIN] Officer email: {email}", flush=True)
         
         db = next(get_db())
         
@@ -571,9 +580,10 @@ def officer_login():
         
         # Verify password
         if not verify_password(password, user.password_hash):
+            print(f"[LOGIN] Officer password mismatch for: {email}", flush=True)
             return jsonify({"error": "Invalid email or password"}), 401
-        
-        # Update last login
+
+        print(f"[LOGIN] Officer password verified for: {email}", flush=True)
         user.last_login = datetime.now(timezone.utc)
         db.commit()
         
