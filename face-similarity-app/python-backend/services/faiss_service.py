@@ -123,17 +123,38 @@ def build_faiss_index():
         criminal_ids = sorted(EMBEDDING_CACHE.keys())  # Sort for consistency
         arcface_embeddings = []
         facenet_embeddings = []
-        
+        valid_ids = []
+
         for criminal_id in criminal_ids:
             embeddings = EMBEDDING_CACHE[criminal_id]
-            arcface_embeddings.append(embeddings['arcface'])
-            facenet_embeddings.append(embeddings['facenet'])
+            arc = embeddings.get('arcface')
+            face = embeddings.get('facenet')
+
+            # Skip entries where both are None (should not happen after precompute fix)
+            if arc is None and face is None:
+                print(f"  [WARN] Skipping {criminal_id}: both embeddings are None")
+                continue
+
+            # Mirror missing slot so FAISS always gets a valid float32 vector
+            if arc is None:
+                arc = face
+            if face is None:
+                face = arc
+
+            arcface_embeddings.append(np.array(arc, dtype=np.float32))
+            facenet_embeddings.append(np.array(face, dtype=np.float32))
+            valid_ids.append(criminal_id)
+
+        if len(valid_ids) == 0:
+            print("[WARNING] No valid embeddings to index")
+            FAISS_INDEX_DIRTY = False
+            return
         
         # Convert to numpy arrays
         arcface_matrix = np.array(arcface_embeddings, dtype=np.float32)
         facenet_matrix = np.array(facenet_embeddings, dtype=np.float32)
         
-        print(f"  Collected {len(criminal_ids)} criminal embeddings")
+        print(f"  Collected {len(valid_ids)} valid criminal embeddings (of {len(criminal_ids)} total)")
         print(f"  ArcFace matrix shape: {arcface_matrix.shape}")
         print(f"  Facenet matrix shape: {facenet_matrix.shape}")
         
@@ -167,7 +188,7 @@ def build_faiss_index():
         print(f"  [OK] Facenet index built with {FAISS_INDEX_FACENET.ntotal} vectors")
         
         # Store criminal IDs in the same order as FAISS index
-        FAISS_CRIMINAL_IDS = criminal_ids
+        FAISS_CRIMINAL_IDS = valid_ids
         
         # Mark index as clean (synchronized with cache)
         FAISS_INDEX_DIRTY = False

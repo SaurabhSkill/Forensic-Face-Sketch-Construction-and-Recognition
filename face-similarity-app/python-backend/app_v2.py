@@ -210,17 +210,35 @@ def precompute_database_embeddings():
                         embeddings = extract_dual_embeddings(temp_path, is_sketch=False)
                         
                         if embeddings and embeddings['success']:
+                            arcface_emb = embeddings['arcface']
+                            facenet_emb = embeddings['facenet']
+
+                            # When one model is unavailable, mirror the other so the
+                            # cache always holds a valid 512-D vector for both slots.
+                            # FAISS requires non-None arrays for both arcface and facenet.
+                            if arcface_emb is None and facenet_emb is not None:
+                                arcface_emb = facenet_emb
+                                print(f"  [INFO] ArcFace unavailable - mirroring Facenet for {criminal.criminal_id}")
+                            elif facenet_emb is None and arcface_emb is not None:
+                                facenet_emb = arcface_emb
+                                print(f"  [INFO] Facenet unavailable - mirroring ArcFace for {criminal.criminal_id}")
+
+                            if arcface_emb is None or facenet_emb is None:
+                                print(f"  [ERROR] Both embeddings None for {criminal.criminal_id}, skipping")
+                                failed_count += 1
+                                continue
+
                             # Store in cache using FAISS service
                             set_cached_embedding(
                                 criminal.criminal_id,
-                                embeddings['arcface'],
-                                embeddings['facenet']
+                                arcface_emb,
+                                facenet_emb
                             )
                             
                             # Update database (store as dict)
                             criminal.face_embedding = {
-                                'arcface': embeddings['arcface'].tolist(),
-                                'facenet': embeddings['facenet'].tolist()
+                                'arcface': arcface_emb.tolist(),
+                                'facenet': facenet_emb.tolist()
                             }
                             criminal.embedding_version = EMBEDDING_VERSION
                             db.commit()

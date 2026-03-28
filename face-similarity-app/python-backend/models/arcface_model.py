@@ -111,6 +111,81 @@ def _delete_corrupt_weight_file() -> None:
         print(f"[ArcFace] WARNING: Could not delete corrupt weight file: {e}")
 
 
+def _manual_download_weights() -> bool:
+    """
+    Download arcface_weights.h5 manually using urllib with browser-like headers.
+
+    GitHub releases redirect to a CDN. The default deepface downloader (gdown/requests
+    without headers) follows the redirect but gets an HTML error page (~9 bytes) instead
+    of the real binary. This function forces a proper download.
+
+    Returns:
+        bool: True if file downloaded and validated successfully.
+    """
+    # GitHub releases CDN URL — follow_redirects handled by urllib
+    url = "https://github.com/serengil/deepface_models/releases/download/v1.0/arcface_weights.h5"
+
+    print(f"[ArcFace] Manual download from: {url}")
+    try:
+        import urllib.request as _ur
+
+        req = _ur.Request(url, headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            "Accept": "application/octet-stream,*/*",
+        })
+
+        _ensure_weights_dir()
+        tmp_path = ARCFACE_WEIGHT_PATH + ".download"
+
+        with _ur.urlopen(req, timeout=300) as resp, open(tmp_path, "wb") as f:
+            total = 0
+            chunk = 65536  # 64 KB
+            while True:
+                data = resp.read(chunk)
+                if not data:
+                    break
+                f.write(data)
+                total += len(data)
+
+        size_mb = total / (1024 * 1024)
+        print(f"[ArcFace] Downloaded {size_mb:.1f} MB to {tmp_path}")
+
+        # Validate before renaming
+        if total < ARCFACE_MIN_SIZE_BYTES:
+            print(f"[ArcFace] Download too small ({size_mb:.1f} MB) - likely an error page")
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            return False
+
+        # Check HDF5 signature
+        with open(tmp_path, "rb") as f:
+            header = f.read(8)
+        if header != HDF5_MAGIC:
+            print(f"[ArcFace] Downloaded file is not a valid HDF5 (got: {header!r})")
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            return False
+
+        # Rename to final path
+        if os.path.exists(ARCFACE_WEIGHT_PATH):
+            os.remove(ARCFACE_WEIGHT_PATH)
+        os.rename(tmp_path, ARCFACE_WEIGHT_PATH)
+        print(f"[ArcFace] [OK] Weights saved to: {ARCFACE_WEIGHT_PATH} ({size_mb:.1f} MB)")
+        return True
+
+    except Exception as e:
+        print(f"[ArcFace] Manual download failed: {e}")
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Model loading with retry
 # ---------------------------------------------------------------------------
@@ -118,7 +193,7 @@ def _delete_corrupt_weight_file() -> None:
 def _load_model_once() -> object:
     """
     Load ArcFace via DeepFace.build_model() with retry logic.
-    Validates weights before each attempt.
+    On OSError (corrupt/redirect file from GitHub), falls back to manual download.
     Raises on final failure.
     """
     _ensure_weights_dir()
@@ -131,8 +206,13 @@ def _load_model_once() -> object:
         if not valid:
             print(f"[ArcFace] Weight validation failed: {reason}")
             _delete_corrupt_weight_file()
-            print("[ArcFace] Triggering fresh download via DeepFace...")
-            # DeepFace will re-download on next build_model() call
+
+            # Try manual download first (avoids GitHub redirect issue)
+            print("[ArcFace] Attempting manual download with browser headers...")
+            downloaded = _manual_download_weights()
+            if not downloaded:
+                print("[ArcFace] Manual download failed, letting DeepFace try...")
+            # Whether manual succeeded or not, fall through to build_model()
 
         try:
             model = DeepFace.build_model("ArcFace")
@@ -146,10 +226,13 @@ def _load_model_once() -> object:
             return model
 
         except OSError as e:
-            # This is the exact EC2 error: "file signature not found"
+            # GitHub redirect produced a non-HDF5 file
             print(f"[ArcFace] [FAIL] OSError on attempt {attempt}: {e}")
-            print("[ArcFace] Deleting potentially corrupt weight file and retrying...")
             _delete_corrupt_weight_file()
+
+            # Try manual download before next retry
+            print("[ArcFace] Retrying with manual download...")
+            _manual_download_weights()
 
         except Exception as e:
             print(f"[ArcFace] [FAIL] Unexpected error on attempt {attempt}: {e}")
