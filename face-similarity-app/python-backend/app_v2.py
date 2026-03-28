@@ -1208,8 +1208,14 @@ def search_criminals():
                 return jsonify({"error": "Failed to extract dual embeddings from sketch"}), 400
             
             print(f"  [OK] Query dual embeddings extracted:")
-            print(f"    ArcFace: length={len(query_embeddings['arcface'])}, normalized")
-            print(f"    Facenet: length={len(query_embeddings['facenet'])}, normalized")
+            if query_embeddings['arcface'] is not None:
+                print(f"    ArcFace: length={len(query_embeddings['arcface'])}, normalized")
+            else:
+                print(f"    ArcFace: unavailable (model not loaded)")
+            if query_embeddings['facenet'] is not None:
+                print(f"    Facenet: length={len(query_embeddings['facenet'])}, normalized")
+            else:
+                print(f"    Facenet: unavailable (model not loaded)")
             
             # Get all criminals from database
             db = next(get_db())
@@ -1228,9 +1234,20 @@ def search_criminals():
             criminal_ids = [c.criminal_id for c in criminals]
             
             # Use FAISS service for search (automatically falls back to linear search if FAISS not available)
+            # Use whichever embedding is available; FAISS service handles None gracefully
+            query_arcface = query_embeddings['arcface']
+            query_facenet = query_embeddings['facenet']
+            # If one model is missing, mirror the other so fusion still works
+            if query_arcface is None and query_facenet is not None:
+                query_arcface = query_facenet
+                print("  [WARN] ArcFace unavailable - using Facenet embedding for FAISS arcface slot")
+            elif query_facenet is None and query_arcface is not None:
+                query_facenet = query_arcface
+                print("  [WARN] Facenet unavailable - using ArcFace embedding for FAISS facenet slot")
+
             search_results, use_faiss = search_top_k_candidates(
-                query_embeddings['arcface'],
-                query_embeddings['facenet'],
+                query_arcface,
+                query_facenet,
                 criminal_ids,
                 top_k
             )
@@ -1350,8 +1367,8 @@ def search_criminals():
                         },
                         "similarity_score": float(final_score),  # Final re-ranked score
                         "embedding_fusion": float(embedding_fusion),
-                        "arcface_similarity": float(arcface_similarity),
-                        "facenet_similarity": float(facenet_similarity),
+                        "arcface_similarity": float(arcface_similarity) if arcface_similarity is not None else None,
+                        "facenet_similarity": float(facenet_similarity) if facenet_similarity is not None else None,
                         "geometric_similarity": float(geometric_similarity),
                         "region_similarity": float(region_similarity),
                         "distance": float(1.0 - final_score),
