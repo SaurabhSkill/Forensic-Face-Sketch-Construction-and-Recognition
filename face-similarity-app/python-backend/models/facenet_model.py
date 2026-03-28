@@ -1,5 +1,5 @@
-"""
-Facenet512 model wrapper — EC2-hardened
+﻿"""
+Facenet512 model wrapper - EC2-hardened
 Handles weight validation, corruption detection, retry logic, and singleton loading.
 """
 import os
@@ -59,7 +59,7 @@ def _get_weight_file_info() -> dict:
 
 
 def _is_valid_hdf5(path: str) -> bool:
-    """Check HDF5 magic bytes — catches the EC2 'file signature not found' error."""
+    """Check HDF5 magic bytes - catches the EC2 'file signature not found' error."""
     try:
         with open(path, "rb") as f:
             header = f.read(8)
@@ -80,11 +80,11 @@ def _validate_weight_file() -> tuple[bool, str]:
     if info["size_bytes"] < FACENET_MIN_SIZE_BYTES:
         return False, (
             f"weight file too small ({info['size_mb']} MB < "
-            f"{FACENET_MIN_SIZE_BYTES // (1024*1024)} MB) — likely partial download"
+            f"{FACENET_MIN_SIZE_BYTES // (1024*1024)} MB) - likely partial download"
         )
 
     if not _is_valid_hdf5(FACENET_WEIGHT_PATH):
-        return False, "weight file has invalid HDF5 signature — file is corrupt"
+        return False, "weight file has invalid HDF5 signature - file is corrupt"
 
     return True, "ok"
 
@@ -123,18 +123,18 @@ def _load_model_once() -> object:
 
             info = _get_weight_file_info()
             print(
-                f"[Facenet512] ✅ Model loaded successfully "
+                f"[Facenet512] [OK] Model loaded successfully "
                 f"(weights: {info.get('size_mb', '?')} MB)"
             )
             return model
 
         except OSError as e:
-            print(f"[Facenet512] ❌ OSError on attempt {attempt}: {e}")
+            print(f"[Facenet512] [FAIL] OSError on attempt {attempt}: {e}")
             print("[Facenet512] Deleting potentially corrupt weight file and retrying...")
             _delete_corrupt_weight_file()
 
         except Exception as e:
-            print(f"[Facenet512] ❌ Unexpected error on attempt {attempt}: {e}")
+            print(f"[Facenet512] [FAIL] Unexpected error on attempt {attempt}: {e}")
             traceback.print_exc()
             if attempt == MAX_LOAD_RETRIES:
                 raise
@@ -152,7 +152,7 @@ def _load_model_once() -> object:
 def initialize_facenet_model(dummy_image_path: str = None) -> bool:
     """
     Thread-safe singleton initializer for Facenet512.
-    Safe to call multiple times — loads only once.
+    Safe to call multiple times - loads only once.
 
     Returns:
         bool: True if model is ready, False if loading failed.
@@ -174,10 +174,10 @@ def initialize_facenet_model(dummy_image_path: str = None) -> bool:
         try:
             _FACENET_MODEL = _load_model_once()
             _FACENET_INITIALIZED = True
-            print("[Facenet512] ✅ Ready")
+            print("[Facenet512] [OK] Ready")
             return True
         except Exception as e:
-            print(f"[Facenet512] ❌ Initialization permanently failed: {e}")
+            print(f"[Facenet512] [FAIL] Initialization permanently failed: {e}")
             _FACENET_LOAD_FAILED = True
             _FACENET_MODEL = None
             _FACENET_INITIALIZED = False

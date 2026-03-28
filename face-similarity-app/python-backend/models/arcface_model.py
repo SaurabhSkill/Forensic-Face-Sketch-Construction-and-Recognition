@@ -1,5 +1,5 @@
-"""
-ArcFace model wrapper — EC2-hardened
+﻿"""
+ArcFace model wrapper - EC2-hardened
 Handles weight validation, corruption detection, retry logic, and singleton loading.
 """
 import os
@@ -17,8 +17,8 @@ WEIGHTS_DIR = os.path.join(os.path.expanduser("~"), ".deepface", "weights")
 ARCFACE_WEIGHT_FILE = "arcface_weights.h5"
 ARCFACE_WEIGHT_PATH = os.path.join(WEIGHTS_DIR, ARCFACE_WEIGHT_FILE)
 
-# ArcFace .h5 file should be at least 200 MB — anything smaller is a partial download
-ARCFACE_MIN_SIZE_BYTES = 200 * 1024 * 1024  # 200 MB
+# ArcFace .h5 file should be at least 120 MB - anything smaller is a partial download
+ARCFACE_MIN_SIZE_BYTES = 120 * 1024 * 1024  # 120 MB
 
 # HDF5 magic bytes (first 8 bytes of every valid .h5 file)
 HDF5_MAGIC = b"\x89HDF\r\n\x1a\n"
@@ -27,7 +27,7 @@ HDF5_MAGIC = b"\x89HDF\r\n\x1a\n"
 MAX_LOAD_RETRIES = 3
 
 # ---------------------------------------------------------------------------
-# Singleton state — protected by a lock for gunicorn multi-worker safety
+# Singleton state - protected by a lock for gunicorn multi-worker safety
 # ---------------------------------------------------------------------------
 
 _ARCFACE_MODEL = None
@@ -66,7 +66,7 @@ def _is_valid_hdf5(path: str) -> bool:
     """
     Check HDF5 magic bytes to detect corrupt / partial downloads.
     The error 'OSError: Unable to synchronously open file (file signature not found)'
-    is caused by a file that is NOT a valid HDF5 — this catches it before TF tries to load it.
+    is caused by a file that is NOT a valid HDF5 - this catches it before TF tries to load it.
     """
     try:
         with open(path, "rb") as f:
@@ -92,11 +92,11 @@ def _validate_weight_file() -> tuple[bool, str]:
     if info["size_bytes"] < ARCFACE_MIN_SIZE_BYTES:
         return False, (
             f"weight file too small ({info['size_mb']} MB < "
-            f"{ARCFACE_MIN_SIZE_BYTES // (1024*1024)} MB) — likely partial download"
+            f"{ARCFACE_MIN_SIZE_BYTES // (1024*1024)} MB) - likely partial download"
         )
 
     if not _is_valid_hdf5(ARCFACE_WEIGHT_PATH):
-        return False, "weight file has invalid HDF5 signature — file is corrupt"
+        return False, "weight file has invalid HDF5 signature - file is corrupt"
 
     return True, "ok"
 
@@ -140,19 +140,19 @@ def _load_model_once() -> object:
             # Confirm weights are now valid after load
             info = _get_weight_file_info()
             print(
-                f"[ArcFace] ✅ Model loaded successfully "
+                f"[ArcFace] [OK] Model loaded successfully "
                 f"(weights: {info.get('size_mb', '?')} MB)"
             )
             return model
 
         except OSError as e:
             # This is the exact EC2 error: "file signature not found"
-            print(f"[ArcFace] ❌ OSError on attempt {attempt}: {e}")
+            print(f"[ArcFace] [FAIL] OSError on attempt {attempt}: {e}")
             print("[ArcFace] Deleting potentially corrupt weight file and retrying...")
             _delete_corrupt_weight_file()
 
         except Exception as e:
-            print(f"[ArcFace] ❌ Unexpected error on attempt {attempt}: {e}")
+            print(f"[ArcFace] [FAIL] Unexpected error on attempt {attempt}: {e}")
             traceback.print_exc()
             if attempt == MAX_LOAD_RETRIES:
                 raise
@@ -170,7 +170,7 @@ def _load_model_once() -> object:
 def initialize_arcface_model(dummy_image_path: str = None) -> bool:
     """
     Thread-safe singleton initializer for ArcFace.
-    Safe to call multiple times — loads only once.
+    Safe to call multiple times - loads only once.
 
     Args:
         dummy_image_path: Deprecated, kept for API compatibility.
@@ -180,7 +180,7 @@ def initialize_arcface_model(dummy_image_path: str = None) -> bool:
     """
     global _ARCFACE_MODEL, _ARCFACE_INITIALIZED, _ARCFACE_LOAD_FAILED
 
-    # Fast path — already done
+    # Fast path - already done
     if _ARCFACE_INITIALIZED:
         return True
     if _ARCFACE_LOAD_FAILED:
@@ -197,10 +197,10 @@ def initialize_arcface_model(dummy_image_path: str = None) -> bool:
         try:
             _ARCFACE_MODEL = _load_model_once()
             _ARCFACE_INITIALIZED = True
-            print("[ArcFace] ✅ Ready")
+            print("[ArcFace] [OK] Ready")
             return True
         except Exception as e:
-            print(f"[ArcFace] ❌ Initialization permanently failed: {e}")
+            print(f"[ArcFace] [FAIL] Initialization permanently failed: {e}")
             _ARCFACE_LOAD_FAILED = True
             _ARCFACE_MODEL = None
             _ARCFACE_INITIALIZED = False
