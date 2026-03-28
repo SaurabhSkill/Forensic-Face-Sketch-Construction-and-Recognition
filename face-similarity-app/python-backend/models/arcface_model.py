@@ -17,8 +17,9 @@ WEIGHTS_DIR = os.path.join(os.path.expanduser("~"), ".deepface", "weights")
 ARCFACE_WEIGHT_FILE = "arcface_weights.h5"
 ARCFACE_WEIGHT_PATH = os.path.join(WEIGHTS_DIR, ARCFACE_WEIGHT_FILE)
 
-# ArcFace .h5 file should be at least 120 MB - anything smaller is a partial download
-ARCFACE_MIN_SIZE_BYTES = 120 * 1024 * 1024  # 120 MB
+# ArcFace .h5 file should be at least 85 MB — anything smaller is a partial download
+# (actual file is ~92 MB; 85 MB gives a safe margin)
+ARCFACE_MIN_SIZE_BYTES = 85 * 1024 * 1024  # 85 MB
 
 # HDF5 magic bytes (first 8 bytes of every valid .h5 file)
 HDF5_MAGIC = b"\x89HDF\r\n\x1a\n"
@@ -156,7 +157,7 @@ def _manual_download_weights() -> bool:
 
         # Validate before renaming
         if total < ARCFACE_MIN_SIZE_BYTES:
-            print(f"[ArcFace] Download too small ({size_mb:.1f} MB) - likely an error page")
+            print(f"[ArcFace] Download too small ({size_mb:.1f} MB) - likely an error page, expected >{ARCFACE_MIN_SIZE_BYTES//(1024*1024)} MB")
             try:
                 os.remove(tmp_path)
             except OSError:
