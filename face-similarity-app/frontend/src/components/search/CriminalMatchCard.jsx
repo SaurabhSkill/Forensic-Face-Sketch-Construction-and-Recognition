@@ -4,9 +4,26 @@ import './CriminalMatchCard.css';
 
 const CriminalMatchCard = ({ match, index, onViewDetails }) => {
   const rank = match.rank || index + 1;
-  const score = match.display_similarity_score || match.similarity_score;
-  
-  // Get rank styling
+
+  // Backend sends similarity_score already normalized (0-100 range via display normalization).
+  // display_similarity is the same value — prefer it, fall back to similarity_score,
+  // and as a last resort multiply raw decimal by 100.
+  const score = match.display_similarity
+    ?? match.similarity_score
+    ?? (match.raw_similarity_score != null ? match.raw_similarity_score * 100 : 0);
+
+  // confidence field is named confidence_level in the API response
+  const confidence = match.confidence_level || match.confidence || null;
+
+  // Debug: log the raw match object once per card to confirm field names
+  console.log('[CriminalMatchCard] match fields:', {
+    rank,
+    display_similarity: match.display_similarity,
+    similarity_score: match.similarity_score,
+    raw_similarity_score: match.raw_similarity_score,
+    confidence_level: match.confidence_level,
+    score_used: score,
+  });
   const getRankClass = () => {
     if (rank === 1) return 'rank-gold';
     if (rank === 2) return 'rank-silver';
@@ -22,13 +39,13 @@ const CriminalMatchCard = ({ match, index, onViewDetails }) => {
   };
 
   const getConfidenceClass = () => {
-    if (!match.confidence) return 'unknown';
-    return match.confidence.toLowerCase().replace('_', '-');
+    if (!confidence) return 'unknown';
+    return confidence.toLowerCase().replace(/_/g, '-');
   };
 
   const getConfidenceLabel = () => {
-    if (!match.confidence) return 'Unknown';
-    return match.confidence.charAt(0).toUpperCase() + match.confidence.slice(1).replace('_', ' ');
+    if (!confidence) return 'Unknown';
+    return confidence.charAt(0).toUpperCase() + confidence.slice(1).replace(/_/g, ' ');
   };
 
   return (

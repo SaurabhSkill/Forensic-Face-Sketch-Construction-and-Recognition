@@ -52,6 +52,8 @@ const SearchPage = () => {
 
       // Small delay to show 100% completion
       setTimeout(() => {
+        console.log('[SearchPage] API response:', response);
+        console.log('[SearchPage] matches[0] sample:', response.matches?.[0]);
         setCriminalMatches(response.matches || []);
         setIsSearching(false);
         setSearchLoading(false);
