@@ -188,9 +188,22 @@ def generate_tta_augmentations(aligned_face: np.ndarray) -> list:
 # Single-model embedding extraction (with TTA)
 # ---------------------------------------------------------------------------
 
-def _resize_for_model(face: np.ndarray, size: int = 112) -> np.ndarray:
-    """Resize face to model input size."""
-    return cv2.resize(face, (size, size), interpolation=cv2.INTER_LANCZOS4)
+# Correct input sizes per model (must match what DeepFace/Keras expects)
+_MODEL_INPUT_SIZE = {
+    "ArcFace": 112,
+    "Facenet512": 160,
+}
+
+
+def _resize_for_model(face: np.ndarray, model_name: str) -> np.ndarray:
+    """Resize face to the correct input size for the given model.
+
+    ArcFace  → 112×112
+    Facenet512 → 160×160
+    """
+    size = _MODEL_INPUT_SIZE.get(model_name, 112)
+    resized = cv2.resize(face, (size, size), interpolation=cv2.INTER_LANCZOS4)
+    return resized
 
 
 def _extract_single_embedding(face_arr: np.ndarray, model_name: str) -> np.ndarray:
@@ -259,10 +272,10 @@ def extract_embedding_with_tta(processed_face: np.ndarray, model_name: str) -> n
 
     for idx, aug_face in enumerate(augmented_faces):
         try:
-            resized = _resize_for_model(aug_face)
+            resized = _resize_for_model(aug_face, model_name)
             emb = _extract_single_embedding(resized, model_name)
             embeddings.append(emb)
-            print(f"    [TTA] {model_name} aug {idx}: [OK] ({len(emb)}-D)")
+            print(f"    [TTA] {model_name} aug {idx}: [OK] ({len(emb)}-D, input={resized.shape[0]}x{resized.shape[1]})")
         except Exception as e:
             print(f"    [TTA] {model_name} aug {idx}: [WARN]  skipped - {e}")
             continue
@@ -276,7 +289,7 @@ def extract_embedding_with_tta(processed_face: np.ndarray, model_name: str) -> n
 
     # All TTA augmentations failed - try plain extraction as last resort
     print(f"    [TTA] {model_name}: all augmentations failed, trying plain extraction...")
-    resized = _resize_for_model(processed_face)
+    resized = _resize_for_model(processed_face, model_name)
     return _extract_single_embedding(resized, model_name)
 
 
@@ -388,7 +401,7 @@ def _select_best_canny_threshold(
         try:
             edges = cv2.Canny(gray, threshold1=thresh[0], threshold2=thresh[1])
             edges_bgr = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
-            resized = _resize_for_model(edges_bgr)
+            resized = _resize_for_model(edges_bgr, "ArcFace")
             emb = _extract_single_embedding(resized, "ArcFace")
             sim = cosine_similarity(emb, reference_embedding)
             print(f"    [AdaptiveCanny] threshold={thresh}: similarity={sim*100:.1f}%")

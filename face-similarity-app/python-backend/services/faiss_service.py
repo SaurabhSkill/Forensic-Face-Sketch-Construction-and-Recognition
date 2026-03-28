@@ -16,7 +16,7 @@ from utils.similarity_utils import cosine_similarity
 
 # Precomputed embeddings cache
 EMBEDDING_CACHE = {}  # {criminal_id: {'arcface': vector, 'facenet': vector}}
-EMBEDDING_VERSION = "dual_arcface_facenet_v1"  # Track embedding model version
+EMBEDDING_VERSION = "dual_arcface_facenet_v2"  # v2: fixed Facenet512 input size 112→160
 
 # FAISS index for fast similarity search
 # FAISS (Facebook AI Similarity Search) provides efficient similarity search for high-dimensional vectors
