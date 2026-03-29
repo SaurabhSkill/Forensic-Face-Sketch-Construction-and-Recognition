@@ -9,10 +9,10 @@ const EmbeddingComparisonChart = ({ similarityScore }) => {
   // Prepare data for bar chart
   const data = [];
 
-  if (similarityScore.arcface_similarity !== undefined && similarityScore.arcface_similarity !== null) {
+  if (similarityScore.insightface_similarity !== undefined && similarityScore.insightface_similarity !== null) {
     data.push({
-      name: 'ArcFace',
-      score: Math.round(similarityScore.arcface_similarity),
+      name: 'InsightFace',
+      score: Math.round(similarityScore.insightface_similarity),
       color: '#06b6d4',
       description: 'Deep learning face recognition model'
     });

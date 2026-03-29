@@ -64,15 +64,15 @@ const ForensicReport = ({ similarityScore, photoFile }) => {
   const embeddingMetrics = [];
   if (isObject) {
     // Try display values first, then fall back to raw values
-    const arcface = getNumericValue(similarityScore.arcface_similarity);
+    const arcface = getNumericValue(similarityScore.insightface_similarity);
     const facenet = getNumericValue(similarityScore.facenet_similarity);
     const fusion = getNumericValue(similarityScore.embedding_fusion);
     
     if (arcface !== null && arcface !== undefined) {
       embeddingMetrics.push({ 
-        name: 'ArcFace Model', 
+        name: 'InsightFace Model', 
         value: arcface, 
-        className: 'arcface',
+        className: 'insightface',
         description: 'Deep learning face recognition model'
       });
     }

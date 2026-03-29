@@ -12,7 +12,7 @@ const ForensicScanningAnimation = ({ isScanning, progress = 0 }) => {
       color: "#00d4ff"
     },
     { 
-      text: "Extracting ArcFace Embeddings...", 
+      text: "Extracting InsightFace Embeddings...", 
       icon: "🧬",
       progress: 20,
       color: "#00d4ff"

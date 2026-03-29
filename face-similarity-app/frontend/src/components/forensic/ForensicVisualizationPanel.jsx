@@ -76,7 +76,7 @@ const ForensicVisualizationPanel = ({ similarityScore }) => {
           <div className="summary-content">
             <h4 className="summary-title">Analysis Methods</h4>
             <ul className="summary-list">
-              <li><strong>ArcFace:</strong> State-of-the-art face recognition</li>
+              <li><strong>InsightFace:</strong> State-of-the-art face recognition</li>
               <li><strong>Facenet:</strong> Neural network embeddings</li>
               <li><strong>Geometric:</strong> Facial landmark analysis</li>
               <li><strong>Fusion:</strong> Combined model consensus</li>

@@ -557,8 +557,8 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
         
         # Log embedding details
         print(f"\n[DUAL EMBEDDING DETAILS]")
-        print(f"  ArcFace embedding 1 length: {len(embeddings1['insightface'])}")
-        print(f"  ArcFace embedding 2 length: {len(embeddings2['insightface'])}")
+        print(f"  InsightFace embedding 1 length: {len(embeddings1['insightface'])}")
+        print(f"  InsightFace embedding 2 length: {len(embeddings2['insightface'])}")
         print(f"  Facenet embedding 1 length: {len(embeddings1['facenet'])}")
         print(f"  Facenet embedding 2 length: {len(embeddings2['facenet'])}")
         print(f"  All embeddings are L2 normalized")
@@ -566,9 +566,9 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
         # Compute similarity for both models using dot product (embeddings are L2 normalized)
         print(f"\n[DUAL EMBEDDING SIMILARITY]")
         
-        # ArcFace similarity using stable cosine similarity
+        # InsightFace similarity using stable cosine similarity
         insightface_similarity = cosine_similarity(embeddings1['insightface'], embeddings2['insightface'])
-        print(f"  ArcFace similarity: {insightface_similarity:.6f} ({insightface_similarity*100:.2f}%)")
+        print(f"  InsightFace similarity: {insightface_similarity:.6f} ({insightface_similarity*100:.2f}%)")
         
         # Facenet similarity using stable cosine similarity
         facenet_similarity = cosine_similarity(embeddings1['facenet'], embeddings2['facenet'])
@@ -577,7 +577,7 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
         # Fuse the scores: 50% InsightFace + 50% Facenet
         embedding_fusion = 0.5 * insightface_similarity + 0.5 * facenet_similarity
         print(f"\n[EMBEDDING FUSION]")
-        print(f"  ArcFace weight: 50%")
+        print(f"  InsightFace weight: 50%")
         print(f"  Facenet weight: 50%")
         print(f"  Fused embedding similarity: {embedding_fusion:.6f} ({embedding_fusion*100:.2f}%)")
         
@@ -701,7 +701,7 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
         elapsed_time = time.time() - start_time
         
         print(f"\n[RESULTS]")
-        print(f"  ArcFace similarity: {insightface_similarity:.4f} ({insightface_similarity*100:.1f}%)")
+        print(f"  InsightFace similarity: {insightface_similarity:.4f} ({insightface_similarity*100:.1f}%)")
         print(f"  Facenet similarity: {facenet_similarity:.4f} ({facenet_similarity*100:.1f}%)")
         print(f"  Embedding fusion similarity: {embedding_fusion:.4f} ({embedding_fusion*100:.1f}%)")
         print(f"  Multi-region similarity: {multi_region_similarity:.4f} ({multi_region_similarity*100:.1f}%)")
@@ -760,13 +760,13 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
             'similarity': float(display_hybrid),  # Alias for display_similarity (for backward compatibility)
             'final_embedding_similarity': float(display_final_embedding),  # Display: Final embedding (fusion + region)
             'embedding_fusion': float(display_fusion),  # Display: Fusion score
-            'insightface_similarity': float(display_insightface),  # Display: ArcFace score
+            'insightface_similarity': float(display_insightface),  # Display: InsightFace score
             'facenet_similarity': float(display_facenet),  # Display: Facenet score
             'geometric_similarity': float(display_geometric),  # Display: Geometric score
             'multi_region_similarity': float(display_multi_region),  # Display: Multi-region combined
             'raw_final_embedding_similarity': float(final_embedding),  # Raw final embedding
             'raw_embedding_fusion': float(embedding_fusion),  # Raw fusion score
-            'raw_insightface_similarity': float(insightface_similarity),  # Raw ArcFace score
+            'raw_insightface_similarity': float(insightface_similarity),  # Raw InsightFace score
             'raw_facenet_similarity': float(facenet_similarity),  # Raw Facenet score
             'raw_geometric_similarity': float(geometric_similarity),  # Raw geometric score
             'raw_multi_region_similarity': float(multi_region_similarity),  # Raw multi-region score

@@ -9,10 +9,10 @@ const SimilarityDistributionChart = ({ similarityScore }) => {
   // Prepare data for radar chart
   const data = [];
 
-  if (similarityScore.arcface_similarity !== undefined && similarityScore.arcface_similarity !== null) {
+  if (similarityScore.insightface_similarity !== undefined && similarityScore.insightface_similarity !== null) {
     data.push({
-      metric: 'ArcFace',
-      similarity: Math.round(similarityScore.arcface_similarity),
+      metric: 'InsightFace',
+      similarity: Math.round(similarityScore.insightface_similarity),
       fullMark: 100
     });
   }
