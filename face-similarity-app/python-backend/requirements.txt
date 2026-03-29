@@ -27,15 +27,20 @@ pyjwt==2.8.0                # JWT token generation/validation
 # ============================================================================
 # Face Recognition & Deep Learning
 # ============================================================================
+# InsightFace ArcFace R50 is loaded directly via ONNX Runtime (no insightface
+# package needed — avoids Windows C++ build requirement).
+# Model file (w600k_r50.onnx) is auto-downloaded on first startup.
+#
+# DeepFace is kept for Facenet512 (secondary model) + face detection.
 # TF 2.13 bundles Keras 2 natively — compatible with deepface 0.0.93.
 # DO NOT upgrade to TF 2.16+ (ships Keras 3 which breaks deepface's tf.keras calls).
 # DO NOT add tf-keras — it conflicts with TF 2.13's bundled Keras 2.
 tensorflow==2.13.0
 keras==2.13.1
-deepface==0.0.93            # Face recognition framework (ArcFace, Facenet512)
+deepface==0.0.93            # Secondary model: Facenet512 + face detection
 opencv-python-headless==4.10.0.84  # Computer vision (headless = no GUI deps)
 numpy>=1.24,<2.0            # Numerical computing (numpy 2.x breaks TF 2.13)
-onnxruntime==1.18.0         # ONNX model runtime
+onnxruntime==1.18.0         # ONNX runtime — runs InsightFace ArcFace R50 directly
 
 # ============================================================================
 # Vector Search & Similarity

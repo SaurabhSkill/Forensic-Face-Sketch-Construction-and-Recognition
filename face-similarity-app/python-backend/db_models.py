@@ -199,7 +199,7 @@ class Criminal(Base):
     photo_filename: Mapped[str] = mapped_column(String(255), nullable=False)
 
     # Face embeddings — JSONB replaces JSONEncodedDict(TEXT).
-    # Shape: {"arcface": [...512 floats...], "facenet": [...128 floats...]}
+    # Shape: {"insightface": [...512 floats...], "facenet": [...512 floats...]}
     face_embedding: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     embedding_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 

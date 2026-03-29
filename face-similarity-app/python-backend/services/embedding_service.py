@@ -1,15 +1,17 @@
-﻿"""
-embedding_service.py - EC2-hardened face embedding service
+"""
+embedding_service.py — dual-model face embedding service.
+
+Models:
+  - InsightFace buffalo_l  (replaces DeepFace ArcFace)  → 512-D
+  - DeepFace Facenet512                                  → 512-D
 
 Key guarantees:
-  - Models loaded ONCE at startup (singleton, thread-safe)
-  - Weight files validated (HDF5 signature + size) before every load attempt
-  - Corrupt/partial files deleted and re-downloaded automatically
-  - ArcFace failure → fallback to Facenet-only (API never crashes)
-  - Facenet failure → fallback to ArcFace-only
-  - Both fail → controlled error dict returned (no exception propagates to API)
-  - TTA never reloads models; individual augmentation failures are skipped safely
-  - All steps logged with file paths and sizes for EC2 debugging
+  - Both models loaded ONCE at startup (singleton, thread-safe)
+  - InsightFace failure → Facenet-only (API never crashes)
+  - Facenet failure     → InsightFace-only
+  - Both fail          → controlled error dict (no unhandled exception)
+  - TTA: 3 augmentations averaged per model
+  - All steps logged for debugging
 """
 
 import os
@@ -18,16 +20,18 @@ import traceback
 
 import cv2
 import numpy as np
+
+# InsightFace (replaces DeepFace ArcFace)
+from models.insightface_model import (
+    initialize_insightface_model,
+    extract_insightface_embedding,
+    normalize_embedding as normalize_insightface,
+    is_insightface_initialized,
+)
+
+# DeepFace Facenet512 (unchanged)
 from deepface import DeepFace
 from deepface.modules import detection
-
-from models.arcface_model import (
-    initialize_arcface_model,
-    extract_arcface_embedding,
-    normalize_embedding as normalize_arcface,
-    is_arcface_initialized,
-    ARCFACE_WEIGHT_PATH,
-)
 from models.facenet_model import (
     initialize_facenet_model,
     extract_facenet_embedding,
@@ -35,6 +39,7 @@ from models.facenet_model import (
     is_facenet_initialized,
     FACENET_WEIGHT_PATH,
 )
+
 from utils.file_utils import generate_temp_filepath, cleanup_temp_file
 from utils.similarity_utils import cosine_similarity
 
@@ -42,8 +47,8 @@ from utils.similarity_utils import cosine_similarity
 # Global initialization state
 # ---------------------------------------------------------------------------
 
-MODEL_INITIALIZED = False          # True once at least one model is ready
-_INIT_LOCK = threading.Lock()      # Guards the initialization sequence
+MODEL_INITIALIZED = False
+_INIT_LOCK = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -52,14 +57,8 @@ _INIT_LOCK = threading.Lock()      # Guards the initialization sequence
 
 def initialize_models() -> bool:
     """
-    Load ArcFace and Facenet512 at server startup.
-
-    - Thread-safe: safe to call from multiple gunicorn workers simultaneously.
-    - Idempotent: calling more than once is a no-op.
-    - Partial success: if one model fails the other still serves requests.
-
-    Returns:
-        bool: True if at least one model loaded successfully.
+    Load InsightFace + Facenet512 at server startup.
+    Thread-safe, idempotent. Returns True if at least one model loaded.
     """
     global MODEL_INITIALIZED
 
@@ -73,21 +72,19 @@ def initialize_models() -> bool:
         print("\n" + "=" * 60)
         print("  INITIALIZING FACE RECOGNITION MODELS")
         print("=" * 60)
-        _log_weight_file_status()
 
-        arcface_ok = _init_arcface_safe()
-        facenet_ok = _init_facenet_safe()
+        insightface_ok = _init_insightface_safe()
+        facenet_ok     = _init_facenet_safe()
 
-        if not arcface_ok and not facenet_ok:
+        if not insightface_ok and not facenet_ok:
             print("[EmbeddingService] [FAIL] CRITICAL: Both models failed to load.")
-            print("[EmbeddingService]    Face comparison will return errors.")
-            MODEL_INITIALIZED = True   # Don't retry on every request
+            MODEL_INITIALIZED = True
             return False
 
         MODEL_INITIALIZED = True
         print("=" * 60)
-        print(f"  ArcFace  : {'[OK] ready' if arcface_ok else '[FAIL] unavailable'}")
-        print(f"  Facenet  : {'[OK] ready' if facenet_ok else '[FAIL] unavailable'}")
+        print(f"  InsightFace : {'[OK] ready' if insightface_ok else '[FAIL] unavailable'}")
+        print(f"  Facenet512  : {'[OK] ready' if facenet_ok     else '[FAIL] unavailable'}")
         print("=" * 60 + "\n")
         return True
 
@@ -100,31 +97,23 @@ def is_models_initialized() -> bool:
 # Private init helpers
 # ---------------------------------------------------------------------------
 
-def _init_arcface_safe() -> bool:
-    """Initialize ArcFace, catching all exceptions."""
+def _init_insightface_safe() -> bool:
     try:
-        print("[ArcFace] Starting initialization...")
-        ok = initialize_arcface_model()
-        if ok:
-            print("[ArcFace] [OK] Initialized successfully")
-        else:
-            print("[ArcFace] [FAIL] Initialization returned False")
+        print("[InsightFace] Starting initialization...")
+        ok = initialize_insightface_model()
+        print(f"[InsightFace] {'[OK] Initialized' if ok else '[FAIL] Initialization returned False'}")
         return ok
     except Exception as e:
-        print(f"[ArcFace] [FAIL] Exception during init: {e}")
+        print(f"[InsightFace] [FAIL] Exception during init: {e}")
         traceback.print_exc()
         return False
 
 
 def _init_facenet_safe() -> bool:
-    """Initialize Facenet512, catching all exceptions."""
     try:
         print("[Facenet512] Starting initialization...")
         ok = initialize_facenet_model()
-        if ok:
-            print("[Facenet512] [OK] Initialized successfully")
-        else:
-            print("[Facenet512] [FAIL] Initialization returned False")
+        print(f"[Facenet512] {'[OK] Initialized' if ok else '[FAIL] Initialization returned False'}")
         return ok
     except Exception as e:
         print(f"[Facenet512] [FAIL] Exception during init: {e}")
@@ -133,13 +122,12 @@ def _init_facenet_safe() -> bool:
 
 
 def _log_weight_file_status() -> None:
-    """Log weight file paths and sizes - critical for EC2 debugging."""
-    for label, path in [("ArcFace", ARCFACE_WEIGHT_PATH), ("Facenet512", FACENET_WEIGHT_PATH)]:
-        if os.path.exists(path):
-            size_mb = os.path.getsize(path) / (1024 * 1024)
-            print(f"  [{label}] weights: {path} ({size_mb:.1f} MB)")
-        else:
-            print(f"  [{label}] weights: NOT FOUND - will download on first load")
+    if os.path.exists(FACENET_WEIGHT_PATH):
+        size_mb = os.path.getsize(FACENET_WEIGHT_PATH) / (1024 * 1024)
+        print(f"  [Facenet512] weights: {FACENET_WEIGHT_PATH} ({size_mb:.1f} MB)")
+    else:
+        print("  [Facenet512] weights: NOT FOUND - will download on first load")
+    print("  [InsightFace] weights: managed by insightface package (~/.insightface/)")
 
 
 # ---------------------------------------------------------------------------
@@ -149,22 +137,19 @@ def _log_weight_file_status() -> None:
 def generate_tta_augmentations(aligned_face: np.ndarray) -> list:
     """
     Generate 3 TTA versions of an aligned face.
-    Never reloads models. Individual failures return the original only.
-
-    Returns:
-        list[np.ndarray]: 1–3 augmented face images.
+    Returns list of 1-3 augmented images.
     """
     try:
         h, w = aligned_face.shape[:2]
-        augmented = [aligned_face.copy()]  # 1. original
+        augmented = [aligned_face.copy()]
 
-        # 2. Horizontal flip
+        # Horizontal flip
         try:
             augmented.append(cv2.flip(aligned_face, 1))
         except Exception as e:
-            print(f"[TTA] Flip augmentation failed (skipped): {e}")
+            print(f"[TTA] Flip failed (skipped): {e}")
 
-        # 3. Rotation +5°
+        # Rotation +5 degrees
         try:
             center = (w // 2, h // 2)
             M = cv2.getRotationMatrix2D(center, 5, 1.0)
@@ -175,110 +160,83 @@ def generate_tta_augmentations(aligned_face: np.ndarray) -> list:
             )
             augmented.append(rotated)
         except Exception as e:
-            print(f"[TTA] Rotation augmentation failed (skipped): {e}")
+            print(f"[TTA] Rotation failed (skipped): {e}")
 
         return augmented
 
     except Exception as e:
-        print(f"[TTA] generate_tta_augmentations failed entirely: {e}")
+        print(f"[TTA] generate_tta_augmentations failed: {e}")
         return [aligned_face]
 
 
 # ---------------------------------------------------------------------------
-# Single-model embedding extraction (with TTA)
+# Single-model embedding extraction helpers
 # ---------------------------------------------------------------------------
 
-# Correct input sizes per model (must match what DeepFace/Keras expects)
-_MODEL_INPUT_SIZE = {
-    "ArcFace": 112,
-    "Facenet512": 160,
-}
+_FACENET_INPUT_SIZE = 160
 
 
-def _resize_for_model(face: np.ndarray, model_name: str) -> np.ndarray:
-    """Resize face to the correct input size for the given model.
-
-    ArcFace  → 112×112
-    Facenet512 → 160×160
-    """
-    size = _MODEL_INPUT_SIZE.get(model_name, 112)
-    resized = cv2.resize(face, (size, size), interpolation=cv2.INTER_LANCZOS4)
-    return resized
+def _resize_for_facenet(face: np.ndarray) -> np.ndarray:
+    return cv2.resize(face, (_FACENET_INPUT_SIZE, _FACENET_INPUT_SIZE),
+                      interpolation=cv2.INTER_LANCZOS4)
 
 
-def _extract_single_embedding(face_arr: np.ndarray, model_name: str) -> np.ndarray:
-    """
-    Extract embedding from a single numpy face array.
-    Does NOT reload the model - uses the already-loaded singleton via DeepFace.represent().
+def _extract_insightface_single(face_arr: np.ndarray) -> np.ndarray:
+    """Extract InsightFace embedding from a single face array."""
+    if not is_insightface_initialized():
+        raise RuntimeError("InsightFace model not initialized")
+    emb = extract_insightface_embedding(face_arr)
+    return normalize_insightface(emb)
 
-    Args:
-        face_arr: Preprocessed face (numpy array, already resized).
-        model_name: 'ArcFace' or 'Facenet512'.
 
-    Returns:
-        np.ndarray: L2-normalized embedding.
+def _extract_facenet_single(face_arr: np.ndarray) -> np.ndarray:
+    """Extract Facenet512 embedding from a single face array via DeepFace."""
+    if not is_facenet_initialized():
+        raise RuntimeError("Facenet512 model not initialized")
 
-    Raises:
-        RuntimeError: If model is not initialized.
-        ValueError: If result is malformed.
-    """
-    if model_name == "ArcFace":
-        if not is_arcface_initialized():
-            raise RuntimeError("ArcFace model not initialized")
-        normalize_fn = normalize_arcface
-    elif model_name == "Facenet512":
-        if not is_facenet_initialized():
-            raise RuntimeError("Facenet512 model not initialized")
-        normalize_fn = normalize_facenet
-    else:
-        raise ValueError(f"Unsupported model: {model_name}")
-
+    resized = _resize_for_facenet(face_arr)
     result = DeepFace.represent(
-        img_path=face_arr,
-        model_name=model_name,
+        img_path=resized,
+        model_name="Facenet512",
         enforce_detection=False,
         align=False,
         detector_backend="skip",
     )
-
     if not result or "embedding" not in result[0]:
-        raise ValueError(f"{model_name}: empty/malformed result from DeepFace.represent()")
+        raise ValueError("Facenet512: empty/malformed result from DeepFace.represent()")
 
-    embedding = np.array(result[0]["embedding"])
-    return normalize_fn(embedding)
+    emb = np.array(result[0]["embedding"])
+    return normalize_facenet(emb)
 
+
+# ---------------------------------------------------------------------------
+# TTA-averaged embedding extraction (public, used by face_comparison_service)
+# ---------------------------------------------------------------------------
 
 def extract_embedding_with_tta(processed_face: np.ndarray, model_name: str) -> np.ndarray:
     """
     Extract embedding with TTA averaging.
 
-    - Generates up to 3 augmentations.
-    - Skips any augmentation that fails (logs warning, continues).
-    - If ALL augmentations fail → falls back to plain extraction from original.
-    - Never reloads models.
-
-    Args:
-        processed_face: Preprocessed face image (numpy array).
-        model_name: 'ArcFace' or 'Facenet512'.
-
-    Returns:
-        np.ndarray: L2-normalized averaged embedding.
-
-    Raises:
-        RuntimeError: If model is unavailable AND fallback also fails.
+    model_name: 'InsightFace' or 'Facenet512'
+    Returns: L2-normalized 512-D embedding.
+    Raises RuntimeError if model unavailable AND fallback also fails.
     """
     augmented_faces = generate_tta_augmentations(processed_face)
     embeddings = []
 
     for idx, aug_face in enumerate(augmented_faces):
         try:
-            resized = _resize_for_model(aug_face, model_name)
-            emb = _extract_single_embedding(resized, model_name)
+            if model_name == "InsightFace":
+                emb = _extract_insightface_single(aug_face)
+            elif model_name == "Facenet512":
+                emb = _extract_facenet_single(aug_face)
+            else:
+                raise ValueError(f"Unsupported model: {model_name}")
+
             embeddings.append(emb)
-            print(f"    [TTA] {model_name} aug {idx}: [OK] ({len(emb)}-D, input={resized.shape[0]}x{resized.shape[1]})")
+            print(f"    [TTA] {model_name} aug {idx}: [OK] ({len(emb)}-D)")
         except Exception as e:
-            print(f"    [TTA] {model_name} aug {idx}: [WARN]  skipped - {e}")
-            continue
+            print(f"    [TTA] {model_name} aug {idx}: [WARN] skipped - {e}")
 
     if embeddings:
         avg = np.mean(embeddings, axis=0)
@@ -287,26 +245,22 @@ def extract_embedding_with_tta(processed_face: np.ndarray, model_name: str) -> n
         print(f"    [TTA] {model_name}: averaged {len(embeddings)} augmentation(s)")
         return avg
 
-    # All TTA augmentations failed - try plain extraction as last resort
+    # All TTA failed — plain extraction as last resort
     print(f"    [TTA] {model_name}: all augmentations failed, trying plain extraction...")
-    resized = _resize_for_model(processed_face, model_name)
-    return _extract_single_embedding(resized, model_name)
+    if model_name == "InsightFace":
+        return _extract_insightface_single(processed_face)
+    return _extract_facenet_single(processed_face)
 
 
 # ---------------------------------------------------------------------------
-# Face detection + alignment
+# Face detection + alignment (Facenet/DeepFace detector, unchanged)
 # ---------------------------------------------------------------------------
 
 def _detect_and_align_face(image_path: str) -> np.ndarray:
     """
-    Detect and align the largest face in the image.
-
-    Returns:
-        np.ndarray: Aligned face as uint8 BGR array.
-
-    Raises:
-        ValueError: If no face is detected.
-        RuntimeError: If detection itself errors.
+    Detect and align the largest face using DeepFace opencv detector.
+    Returns uint8 BGR aligned face array.
+    Raises ValueError if no face detected.
     """
     face_objs = detection.extract_faces(
         img_path=image_path,
@@ -320,8 +274,6 @@ def _detect_and_align_face(image_path: str) -> np.ndarray:
         raise ValueError(f"No face detected in: {image_path}")
 
     aligned = face_objs[0]["face"]
-
-    # DeepFace may return float32 in [0,1] - convert to uint8
     if aligned.dtype in (np.float32, np.float64):
         aligned = (aligned * 255).astype(np.uint8)
 
@@ -339,19 +291,12 @@ def _preprocess_face(
     canny_threshold: tuple = (50, 150),
 ) -> np.ndarray:
     """
-    Apply domain-bridging preprocessing to an aligned face.
-
     Photos  → Canny edge detection (reduces photo→sketch domain gap)
-    Sketches → grayscale → 3-channel BGR (no edge detection)
-
-    Returns:
-        np.ndarray: Preprocessed face as uint8 BGR.
+    Sketches → grayscale → 3-channel BGR
     """
-    # Ensure uint8
     if aligned_face.dtype in (np.float32, np.float64):
         aligned_face = (aligned_face * 255).astype(np.uint8)
 
-    # Convert to grayscale
     gray = (
         cv2.cvtColor(aligned_face, cv2.COLOR_BGR2GRAY)
         if len(aligned_face.shape) == 3
@@ -361,13 +306,12 @@ def _preprocess_face(
     if is_sketch:
         return cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
-    # Photo: apply Canny edge detection
     edges = cv2.Canny(gray, threshold1=canny_threshold[0], threshold2=canny_threshold[1])
     return cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
 
 
 # ---------------------------------------------------------------------------
-# Adaptive Canny threshold selection
+# Adaptive Canny threshold selection (uses InsightFace instead of ArcFace)
 # ---------------------------------------------------------------------------
 
 def _select_best_canny_threshold(
@@ -375,13 +319,12 @@ def _select_best_canny_threshold(
     reference_embedding: np.ndarray,
 ) -> tuple:
     """
-    Test 3 Canny threshold combinations and pick the one whose ArcFace
+    Test 3 Canny threshold combinations and pick the one whose InsightFace
     embedding is most similar to the reference (sketch) embedding.
-
-    Falls back to (50, 150) if ArcFace is unavailable or all tests fail.
+    Falls back to (50, 150) if InsightFace is unavailable.
     """
-    if not is_arcface_initialized():
-        print("    [AdaptiveCanny] ArcFace unavailable, using default threshold (50, 150)")
+    if not is_insightface_initialized():
+        print("    [AdaptiveCanny] InsightFace unavailable, using default threshold (50, 150)")
         return (50, 150)
 
     candidates = [(30, 120), (50, 150), (70, 200)]
@@ -401,8 +344,7 @@ def _select_best_canny_threshold(
         try:
             edges = cv2.Canny(gray, threshold1=thresh[0], threshold2=thresh[1])
             edges_bgr = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
-            resized = _resize_for_model(edges_bgr, "ArcFace")
-            emb = _extract_single_embedding(resized, "ArcFace")
+            emb = _extract_insightface_single(edges_bgr)
             sim = cosine_similarity(emb, reference_embedding)
             print(f"    [AdaptiveCanny] threshold={thresh}: similarity={sim*100:.1f}%")
             if sim > best_similarity:
@@ -426,34 +368,20 @@ def extract_dual_embeddings(
     reference_embedding: np.ndarray = None,
 ) -> dict:
     """
-    Extract ArcFace + Facenet512 dual embeddings from an image.
+    Extract InsightFace + Facenet512 dual embeddings from an image.
 
-    Fail-safe behaviour:
-      - ArcFace fails  → result still contains Facenet embedding (success=True)
-      - Facenet fails  → result still contains ArcFace embedding (success=True)
-      - Both fail      → returns {'success': False, 'error': '...'}
-      - API never raises an unhandled exception
+    Fail-safe:
+      - InsightFace fails → result still contains Facenet embedding (success=True)
+      - Facenet fails     → result still contains InsightFace embedding (success=True)
+      - Both fail         → {'success': False, 'error': '...'}
 
-    Args:
-        image_path:           Path to image file.
-        is_sketch:            True for sketch images, False for photos.
-        use_adaptive_canny:   Test multiple Canny thresholds (photos only).
-        reference_embedding:  Sketch embedding for adaptive threshold selection.
-
-    Returns:
-        dict with keys:
-            success (bool)
-            arcface (np.ndarray | None)
-            facenet (np.ndarray | None)
-            aligned_face (np.ndarray | None)
-            tta_applied (bool)
-            tta_augmentations (int)
-            best_threshold (tuple | None)
-            error (str | None)
+    Returns dict with keys:
+        success, insightface, facenet, aligned_face,
+        tta_applied, tta_augmentations, best_threshold, error
     """
     result = {
         "success": False,
-        "arcface": None,
+        "insightface": None,
         "facenet": None,
         "aligned_face": None,
         "tta_applied": False,
@@ -462,14 +390,12 @@ def extract_dual_embeddings(
         "error": None,
     }
 
-    # ── 0. Guard: at least one model must be ready ──────────────────────────
-    if not is_arcface_initialized() and not is_facenet_initialized():
-        msg = "No face recognition models are available. Check server startup logs."
+    if not is_insightface_initialized() and not is_facenet_initialized():
+        msg = "No face recognition models available. Check server startup logs."
         print(f"[EmbeddingService] [FAIL] {msg}")
         result["error"] = msg
         return result
 
-    # ── 1. Validate input file ───────────────────────────────────────────────
     if not os.path.exists(image_path):
         result["error"] = f"Input image not found: {image_path}"
         print(f"[EmbeddingService] [FAIL] {result['error']}")
@@ -477,14 +403,14 @@ def extract_dual_embeddings(
 
     img_check = cv2.imread(image_path)
     if img_check is None:
-        result["error"] = f"cv2.imread() failed - corrupt or unsupported image: {image_path}"
+        result["error"] = f"cv2.imread() failed: {image_path}"
         print(f"[EmbeddingService] [FAIL] {result['error']}")
         return result
 
     print(f"[EmbeddingService] Processing: {os.path.basename(image_path)} "
           f"({'sketch' if is_sketch else 'photo'})")
 
-    # ── 2. Face detection + alignment ───────────────────────────────────────
+    # Step 1: Face detection + alignment
     try:
         print("  [Step 1] Detecting and aligning face...")
         aligned_face = _detect_and_align_face(image_path)
@@ -494,7 +420,7 @@ def extract_dual_embeddings(
         print(f"[EmbeddingService] [FAIL] {result['error']}")
         return result
 
-    # ── 3. Preprocessing (edge detection / sketch passthrough) ──────────────
+    # Step 2: Preprocessing
     try:
         print("  [Step 2] Preprocessing face...")
         if not is_sketch and use_adaptive_canny and reference_embedding is not None:
@@ -511,22 +437,22 @@ def extract_dual_embeddings(
         print(f"[EmbeddingService] [FAIL] {result['error']}")
         return result
 
-    # ── 4. ArcFace embedding (with TTA) ─────────────────────────────────────
-    arcface_ok = False
-    if is_arcface_initialized():
+    # Step 3a: InsightFace embedding (with TTA)
+    insightface_ok = False
+    if is_insightface_initialized():
         try:
-            print("  [Step 3a] Extracting ArcFace embedding (TTA)...")
-            arcface_emb = extract_embedding_with_tta(processed_face, "ArcFace")
-            result["arcface"] = arcface_emb
-            arcface_ok = True
-            print(f"    [OK] ArcFace: {len(arcface_emb)}-D, normalized")
+            print("  [Step 3a] Extracting InsightFace embedding (TTA)...")
+            insightface_emb = extract_embedding_with_tta(processed_face, "InsightFace")
+            result["insightface"] = insightface_emb
+            insightface_ok = True
+            print(f"    [OK] InsightFace: {len(insightface_emb)}-D, normalized")
         except Exception as e:
-            print(f"  [Step 3a] [FAIL] ArcFace failed: {e}")
+            print(f"  [Step 3a] [FAIL] InsightFace failed: {e}")
             traceback.print_exc()
     else:
-        print("  [Step 3a] [WARN]  ArcFace not initialized - skipping")
+        print("  [Step 3a] [WARN] InsightFace not initialized - skipping")
 
-    # ── 5. Facenet512 embedding (with TTA) ──────────────────────────────────
+    # Step 3b: Facenet512 embedding (with TTA)
     facenet_ok = False
     if is_facenet_initialized():
         try:
@@ -539,21 +465,20 @@ def extract_dual_embeddings(
             print(f"  [Step 3b] [FAIL] Facenet512 failed: {e}")
             traceback.print_exc()
     else:
-        print("  [Step 3b] [WARN]  Facenet512 not initialized - skipping")
+        print("  [Step 3b] [WARN] Facenet512 not initialized - skipping")
 
-    # ── 6. Determine overall success ────────────────────────────────────────
-    if not arcface_ok and not facenet_ok:
+    if not insightface_ok and not facenet_ok:
         result["error"] = (
-            "Both ArcFace and Facenet512 embedding extraction failed. "
+            "Both InsightFace and Facenet512 embedding extraction failed. "
             "Check model weights and server logs."
         )
         print(f"[EmbeddingService] [FAIL] {result['error']}")
         return result
 
-    if not arcface_ok:
-        print("[EmbeddingService] [WARN]  ArcFace unavailable - using Facenet512 only")
+    if not insightface_ok:
+        print("[EmbeddingService] [WARN] InsightFace unavailable - using Facenet512 only")
     if not facenet_ok:
-        print("[EmbeddingService] [WARN]  Facenet512 unavailable - using ArcFace only")
+        print("[EmbeddingService] [WARN] Facenet512 unavailable - using InsightFace only")
 
     result["success"] = True
     result["tta_applied"] = True
@@ -563,10 +488,11 @@ def extract_dual_embeddings(
 
 def extract_embedding(image_path: str, is_sketch: bool = False) -> np.ndarray:
     """
-    Legacy single-embedding API - returns ArcFace embedding (or Facenet as fallback).
+    Legacy single-embedding API.
+    Returns InsightFace embedding (or Facenet as fallback).
     Use extract_dual_embeddings() for new code.
     """
     res = extract_dual_embeddings(image_path, is_sketch)
     if res and res["success"]:
-        return res["arcface"] if res["arcface"] is not None else res["facenet"]
+        return res["insightface"] if res["insightface"] is not None else res["facenet"]
     return None

@@ -137,11 +137,11 @@ from services.faiss_service import (
 
 def precompute_database_embeddings():
     """
-    Precompute and cache dual embeddings (ArcFace + Facenet) for all criminals in database
+    Precompute and cache dual embeddings (InsightFace + Facenet) for all criminals in database
     Called at startup
     """
     print("\n" + "="*60)
-    print("PRECOMPUTING DATABASE DUAL EMBEDDINGS (ArcFace + Facenet)")
+    print("PRECOMPUTING DATABASE DUAL EMBEDDINGS (InsightFace + Facenet)")
     print("="*60)
     
     db = next(get_db())
@@ -159,10 +159,10 @@ def precompute_database_embeddings():
                 if criminal.face_embedding and criminal.embedding_version == EMBEDDING_VERSION:
                     # Load from database (stored as dict with arcface and facenet keys)
                     embedding_data = criminal.face_embedding
-                    if isinstance(embedding_data, dict) and 'arcface' in embedding_data and 'facenet' in embedding_data:
+                    if isinstance(embedding_data, dict) and 'insightface' in embedding_data and 'facenet' in embedding_data:
                         set_cached_embedding(
                             criminal.criminal_id,
-                            np.array(embedding_data['arcface']),
+                            np.array(embedding_data['insightface']),
                             np.array(embedding_data['facenet'])
                         )
                         cached_count += 1
@@ -210,20 +210,20 @@ def precompute_database_embeddings():
                         embeddings = extract_dual_embeddings(temp_path, is_sketch=False)
                         
                         if embeddings and embeddings['success']:
-                            arcface_emb = embeddings['arcface']
+                            insightface_emb = embeddings['insightface']
                             facenet_emb = embeddings['facenet']
 
                             # When one model is unavailable, mirror the other so the
                             # cache always holds a valid 512-D vector for both slots.
                             # FAISS requires non-None arrays for both arcface and facenet.
-                            if arcface_emb is None and facenet_emb is not None:
-                                arcface_emb = facenet_emb
-                                print(f"  [INFO] ArcFace unavailable - mirroring Facenet for {criminal.criminal_id}")
-                            elif facenet_emb is None and arcface_emb is not None:
-                                facenet_emb = arcface_emb
-                                print(f"  [INFO] Facenet unavailable - mirroring ArcFace for {criminal.criminal_id}")
+                            if insightface_emb is None and facenet_emb is not None:
+                                insightface_emb = facenet_emb
+                                print(f"  [INFO] InsightFace unavailable - mirroring Facenet for {criminal.criminal_id}")
+                            elif facenet_emb is None and insightface_emb is not None:
+                                facenet_emb = insightface_emb
+                                print(f"  [INFO] Facenet unavailable - mirroring InsightFace for {criminal.criminal_id}")
 
-                            if arcface_emb is None or facenet_emb is None:
+                            if insightface_emb is None or facenet_emb is None:
                                 print(f"  [ERROR] Both embeddings None for {criminal.criminal_id}, skipping")
                                 failed_count += 1
                                 continue
@@ -231,13 +231,13 @@ def precompute_database_embeddings():
                             # Store in cache using FAISS service
                             set_cached_embedding(
                                 criminal.criminal_id,
-                                arcface_emb,
+                                insightface_emb,
                                 facenet_emb
                             )
                             
                             # Update database (store as dict)
                             criminal.face_embedding = {
-                                'arcface': arcface_emb.tolist(),
+                                'insightface': insightface_emb.tolist(),
                                 'facenet': facenet_emb.tolist()
                             }
                             criminal.embedding_version = EMBEDDING_VERSION
@@ -1026,7 +1026,7 @@ def add_criminal():
             temp_photo_path = save_bytes_to_temp(photo_data, photo_file.filename or 'criminal.jpg')
             
             try:
-                # Extract dual embeddings (ArcFace + Facenet)
+                # Extract dual embeddings (InsightFace + Facenet)
                 embeddings = extract_dual_embeddings(
                     image_path=temp_photo_path,
                     is_sketch=False,
@@ -1036,7 +1036,7 @@ def add_criminal():
                 # Store embeddings in cache
                 set_cached_embedding(
                     criminal_id=new_criminal.criminal_id,
-                    arcface_embedding=embeddings['arcface'],
+                    insightface_embedding=embeddings['insightface'],
                     facenet_embedding=embeddings['facenet']
                 )
                 
@@ -1219,17 +1219,17 @@ def search_criminals():
         
         try:
             # Extract DUAL embeddings for query sketch ONCE
-            print(f"\n[QUERY DUAL EMBEDDING] Extracting dual embeddings (ArcFace + Facenet) for sketch...")
+            print(f"\n[QUERY DUAL EMBEDDING] Extracting dual embeddings (InsightFace + Facenet) for sketch...")
             query_embeddings = extract_dual_embeddings(sketch_path, is_sketch=True)
             
             if query_embeddings is None or not query_embeddings['success']:
                 return jsonify({"error": "Failed to extract dual embeddings from sketch"}), 400
             
             print(f"  [OK] Query dual embeddings extracted:")
-            if query_embeddings['arcface'] is not None:
-                print(f"    ArcFace: length={len(query_embeddings['arcface'])}, normalized")
+            if query_embeddings['insightface'] is not None:
+                print(f"    InsightFace: length={len(query_embeddings['insightface'])}, normalized")
             else:
-                print(f"    ArcFace: unavailable (model not loaded)")
+                print(f"    InsightFace: unavailable (model not loaded)")
             if query_embeddings['facenet'] is not None:
                 print(f"    Facenet: length={len(query_embeddings['facenet'])}, normalized")
             else:
@@ -1253,18 +1253,18 @@ def search_criminals():
             
             # Use FAISS service for search (automatically falls back to linear search if FAISS not available)
             # Use whichever embedding is available; FAISS service handles None gracefully
-            query_arcface = query_embeddings['arcface']
+            query_insightface = query_embeddings['insightface']
             query_facenet = query_embeddings['facenet']
             # If one model is missing, mirror the other so fusion still works
-            if query_arcface is None and query_facenet is not None:
-                query_arcface = query_facenet
-                print("  [WARN] ArcFace unavailable - using Facenet embedding for FAISS arcface slot")
-            elif query_facenet is None and query_arcface is not None:
-                query_facenet = query_arcface
-                print("  [WARN] Facenet unavailable - using ArcFace embedding for FAISS facenet slot")
+            if query_insightface is None and query_facenet is not None:
+                query_insightface = query_facenet
+                print("  [WARN] InsightFace unavailable - using Facenet embedding for FAISS insightface slot")
+            elif query_facenet is None and query_insightface is not None:
+                query_facenet = query_insightface
+                print("  [WARN] Facenet unavailable - using InsightFace embedding for FAISS facenet slot")
 
             search_results, use_faiss = search_top_k_candidates(
-                query_arcface,
+                query_insightface,
                 query_facenet,
                 criminal_ids,
                 top_k
@@ -1280,7 +1280,7 @@ def search_criminals():
                     top_k_candidates.append({
                         'criminal': criminal_dict[criminal_id],
                         'embedding_fusion': result['embedding_fusion'],
-                        'arcface_similarity': result['arcface_similarity'],
+                        'insightface_similarity': result['insightface_similarity'],
                         'facenet_similarity': result['facenet_similarity']
                     })
             
@@ -1296,7 +1296,7 @@ def search_criminals():
                 try:
                     criminal = candidate['criminal']
                     embedding_fusion = candidate['embedding_fusion']
-                    arcface_similarity = candidate['arcface_similarity']
+                    insightface_similarity = candidate['insightface_similarity']
                     facenet_similarity = candidate['facenet_similarity']
                     
                     # Download criminal photo to temp file via S3 signed URL
@@ -1385,12 +1385,12 @@ def search_criminals():
                         },
                         "similarity_score": float(final_score),  # Final re-ranked score
                         "embedding_fusion": float(embedding_fusion),
-                        "arcface_similarity": float(arcface_similarity) if arcface_similarity is not None else None,
+                        "insightface_similarity": float(insightface_similarity) if insightface_similarity is not None else None,
                         "facenet_similarity": float(facenet_similarity) if facenet_similarity is not None else None,
                         "geometric_similarity": float(geometric_similarity),
                         "region_similarity": float(region_similarity),
                         "distance": float(1.0 - final_score),
-                        "model_used": 'Two-Stage Re-Ranking (ArcFace + Facenet + Geometric + Multi-Region)',
+                        "model_used": 'Two-Stage Re-Ranking (InsightFace + Facenet + Geometric + Multi-Region)',
                         "metric_used": 'Stage 1: embedding fusion | Stage 2: 60% embedding + 25% geometric + 15% region',
                         "is_cross_domain": True,
                         "stage1_rank": top_k_candidates.index(candidate) + 1,
@@ -1419,7 +1419,7 @@ def search_criminals():
             if len(matches) > 0:
                 similarities = [m['similarity_score'] for m in matches]
                 embedding_fusions = [m['embedding_fusion'] for m in matches]
-                arcface_sims = [m['arcface_similarity'] for m in matches]
+                insightface_sims = [m['insightface_similarity'] for m in matches]
                 facenet_sims = [m['facenet_similarity'] for m in matches]
                 geometric_sims = [m['geometric_similarity'] for m in matches]
                 
@@ -1457,7 +1457,7 @@ def search_criminals():
                 for match in matches:
                     raw_similarity = match['similarity_score']
                     raw_fusion = match['embedding_fusion']
-                    raw_arcface = match['arcface_similarity']
+                    raw_arcface = match['insightface_similarity']
                     raw_facenet = match['facenet_similarity']
                     raw_geometric = match['geometric_similarity']
                     
@@ -1534,8 +1534,8 @@ def search_criminals():
                     match['display_similarity'] = float(display_hybrid)
                     match['embedding_fusion'] = float(display_fusion)
                     match['raw_embedding_fusion'] = float(raw_fusion)
-                    match['arcface_similarity'] = float(display_arcface)
-                    match['raw_arcface_similarity'] = float(raw_arcface)
+                    match['insightface_similarity'] = float(display_arcface)
+                    match['raw_insightface_similarity'] = float(raw_arcface)
                     match['facenet_similarity'] = float(display_facenet)
                     match['raw_facenet_similarity'] = float(raw_facenet)
                     match['geometric_similarity'] = float(display_geometric)
@@ -1565,7 +1565,7 @@ def search_criminals():
                             "description": "Fused embedding similarity: 50% ArcFace + 50% Facenet512",
                             "weight": "60%"
                         },
-                        "arcface_similarity": {
+                        "insightface_similarity": {
                             "value": float(display_arcface),
                             "percentage": f"{display_arcface:.1f}%",
                             "raw_value": float(raw_arcface),
@@ -1659,11 +1659,11 @@ def search_criminals():
                 print(f"    Name: {match['criminal']['full_name']}")
                 print(f"    Normalized - Hybrid: {match['similarity_score']:.1f}%, "
                       f"Fusion: {match['embedding_fusion']:.1f}% "
-                      f"(Arc: {match['arcface_similarity']:.1f}%, Face: {match['facenet_similarity']:.1f}%), "
+                      f"(Arc: {match['insightface_similarity']:.1f}%, Face: {match['facenet_similarity']:.1f}%), "
                       f"Geo: {match['geometric_similarity']:.1f}%")
                 print(f"    Raw - Hybrid: {match['raw_similarity_score']:.4f}, "
                       f"Fusion: {match['raw_embedding_fusion']:.4f} "
-                      f"(Arc: {match['raw_arcface_similarity']:.4f}, Face: {match['raw_facenet_similarity']:.4f}), "
+                      f"(Arc: {match['raw_insightface_similarity']:.4f}, Face: {match['raw_facenet_similarity']:.4f}), "
                       f"Geo: {match['raw_geometric_similarity']:.4f}")
                 print(f"    Z-score: {match['statistical_analysis']['z_score']:.2f}, "
                       f"Category: {match['similarity_category']}, "
@@ -1752,13 +1752,13 @@ def compare_faces():
                 "display_similarity": result.get('display_similarity', 0.0),
                 "final_embedding_similarity": result.get('final_embedding_similarity', 0.0),
                 "embedding_fusion": result.get('embedding_fusion', 0.0),
-                "arcface_similarity": result.get('arcface_similarity', 0.0),
+                "insightface_similarity": result.get('insightface_similarity', 0.0),
                 "facenet_similarity": result.get('facenet_similarity', 0.0),
                 "geometric_similarity": result.get('geometric_similarity', 0.0),
                 "multi_region_similarity": result.get('multi_region_similarity', 0.0),
                 "raw_final_embedding_similarity": result.get('raw_final_embedding_similarity', 0.0),
                 "raw_embedding_fusion": result.get('raw_embedding_fusion', 0.0),
-                "raw_arcface_similarity": result.get('raw_arcface_similarity', 0.0),
+                "raw_insightface_similarity": result.get('raw_insightface_similarity', 0.0),
                 "raw_facenet_similarity": result.get('raw_facenet_similarity', 0.0),
                 "raw_geometric_similarity": result.get('raw_geometric_similarity', 0.0),
                 "raw_multi_region_similarity": result.get('raw_multi_region_similarity', 0.0),

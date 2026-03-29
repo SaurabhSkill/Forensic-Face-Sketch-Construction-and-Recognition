@@ -321,19 +321,18 @@ def preprocess_with_adaptive_canny(image_path: str, is_sketch: bool = False,
                 # Convert to 3-channel BGR
                 bgr = convert_to_bgr(edges)
                 
-                # Resize to ArcFace native size (112x112)
+                # Resize to InsightFace input size (112x112)
                 target_size = 112
                 resized = resize_to_arcface_size(bgr, target_size)
-                
-                # Extract embedding directly from numpy array (no disk I/O!)
-                result = DeepFace.represent(
-                    img_path=resized,  # Pass numpy array directly!
-                    model_name='ArcFace',
-                    enforce_detection=False,  # Skip detection (already preprocessed)
-                    align=False,  # Skip alignment (already resized)
-                    detector_backend='skip'
+
+                # Extract embedding using InsightFace
+                from models.insightface_model import (
+                    extract_insightface_embedding,
+                    is_insightface_initialized,
                 )
-                embedding = np.array(result[0]['embedding'])
+                if not is_insightface_initialized():
+                    raise RuntimeError("InsightFace not initialized")
+                embedding = extract_insightface_embedding(resized)
                 
                 # Compute similarity with reference embedding using stable cosine similarity
                 similarity = cosine_similarity(embedding, reference_embedding)
