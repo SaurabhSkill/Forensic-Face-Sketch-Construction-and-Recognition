@@ -1438,8 +1438,8 @@ def search_criminals():
                     "median": median_similarity,
                     "total_candidates": len(matches),
                     "mean_embedding_fusion": float(np.mean(embedding_fusions)),
-                    "mean_arcface": float(np.mean(arcface_sims)),
-                    "mean_facenet": float(np.mean(facenet_sims)),
+                    "mean_arcface": float(np.mean([s for s in insightface_sims if s is not None])) if any(s is not None for s in insightface_sims) else None,
+                    "mean_facenet": float(np.mean([s for s in facenet_sims if s is not None])) if any(s is not None for s in facenet_sims) else None,
                     "mean_geometric": float(np.mean(geometric_sims))
                 }
                 

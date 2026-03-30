@@ -99,12 +99,21 @@ def is_models_initialized() -> bool:
 
 def _init_insightface_safe() -> bool:
     try:
-        print("[InsightFace] Starting initialization...")
         ok = initialize_insightface_model()
-        print(f"[InsightFace] {'[OK] Initialized' if ok else '[FAIL] Initialization returned False'}")
+        if not ok:
+            print("[InsightFace] [ERROR] initialize_insightface_model() returned False — model unavailable")
         return ok
+    except RuntimeError as e:
+        # initialize_insightface_model raises RuntimeError with full detail on failure
+        print(f"[InsightFace] [ERROR] Initialization failed with RuntimeError:")
+        print(f"[InsightFace] [ERROR] {e}")
+        print("[InsightFace] [ERROR] InsightFace will be UNAVAILABLE for this session.")
+        print("[InsightFace] [ERROR] Fix: ensure w600k_r50.onnx (~166 MB) is downloadable or place it manually at:")
+        from models.insightface_model import ONNX_PATH
+        print(f"[InsightFace] [ERROR]   {ONNX_PATH}")
+        return False
     except Exception as e:
-        print(f"[InsightFace] [FAIL] Exception during init: {e}")
+        print(f"[InsightFace] [ERROR] Unexpected exception during initialization: {type(e).__name__}: {e}")
         traceback.print_exc()
         return False
 

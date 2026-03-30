@@ -15,6 +15,7 @@ from services.embedding_service import (
     extract_dual_embeddings,
     extract_embedding_with_tta
 )
+from models.insightface_model import is_insightface_initialized
 from preprocessing.sketch_photo_preprocess import is_sketch_image
 from utils.file_utils import get_file_hash
 from utils.similarity_utils import cosine_similarity
@@ -524,7 +525,8 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
         # Use adaptive Canny if it's a photo and we're doing cross-domain comparison
         print(f"\n  Extracting dual embeddings 2 (reference)...")
         use_adaptive = is_cross_domain and not is_img2_sketch  # Only for photos in cross-domain
-        reference_emb = embeddings1['insightface'] if use_adaptive else None
+        insightface_available = embeddings1.get('insightface') is not None
+        reference_emb = embeddings1['insightface'] if (use_adaptive and insightface_available) else None
         
         embeddings2 = extract_dual_embeddings(
             photo_path, 
@@ -555,64 +557,111 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
                 'forensic_note': 'Dual embedding extraction failed for image 2.'
             }
         
+        # Determine which models are available
+        insightface_available = embeddings1.get('insightface') is not None and embeddings2.get('insightface') is not None
+        facenet_available = embeddings1.get('facenet') is not None and embeddings2.get('facenet') is not None
+
         # Log embedding details
         print(f"\n[DUAL EMBEDDING DETAILS]")
-        print(f"  InsightFace embedding 1 length: {len(embeddings1['insightface'])}")
-        print(f"  InsightFace embedding 2 length: {len(embeddings2['insightface'])}")
-        print(f"  Facenet embedding 1 length: {len(embeddings1['facenet'])}")
-        print(f"  Facenet embedding 2 length: {len(embeddings2['facenet'])}")
+        if insightface_available:
+            print(f"  InsightFace embedding 1 length: {len(embeddings1['insightface'])}")
+            print(f"  InsightFace embedding 2 length: {len(embeddings2['insightface'])}")
+        else:
+            print(f"  InsightFace: unavailable (skipped)")
+        if facenet_available:
+            print(f"  Facenet embedding 1 length: {len(embeddings1['facenet'])}")
+            print(f"  Facenet embedding 2 length: {len(embeddings2['facenet'])}")
+        else:
+            print(f"  Facenet: unavailable (skipped)")
         print(f"  All embeddings are L2 normalized")
-        
+
+        if not insightface_available and not facenet_available:
+            return {
+                'distance': 1.0, 'similarity': 0.0, 'embedding_similarity': 0.0,
+                'insightface_similarity': 0.0, 'facenet_similarity': 0.0,
+                'geometric_similarity': 0.0, 'similarity_category': 'ERROR',
+                'confidence_level': 'error', 'confidence_score': 0.0,
+                'match_quality': 'No face recognition models available',
+                'is_cross_domain': is_cross_domain, 'comparison_type': 'error',
+                'model_used': 'failed', 'metric_used': 'none',
+                'processing_time': round(time.time() - start_time, 3),
+                'error': 'No embeddings available from either model',
+                'from_cache': False,
+                'forensic_note': 'Both InsightFace and Facenet failed to produce embeddings.'
+            }
+
         # Compute similarity for both models using dot product (embeddings are L2 normalized)
         print(f"\n[DUAL EMBEDDING SIMILARITY]")
-        
+
         # InsightFace similarity using stable cosine similarity
-        insightface_similarity = cosine_similarity(embeddings1['insightface'], embeddings2['insightface'])
-        print(f"  InsightFace similarity: {insightface_similarity:.6f} ({insightface_similarity*100:.2f}%)")
-        
+        if insightface_available:
+            insightface_similarity = cosine_similarity(embeddings1['insightface'], embeddings2['insightface'])
+            print(f"  InsightFace similarity: {insightface_similarity:.6f} ({insightface_similarity*100:.2f}%)")
+        else:
+            insightface_similarity = None
+            print(f"  InsightFace similarity: N/A (model unavailable)")
+
         # Facenet similarity using stable cosine similarity
-        facenet_similarity = cosine_similarity(embeddings1['facenet'], embeddings2['facenet'])
-        print(f"  Facenet similarity: {facenet_similarity:.6f} ({facenet_similarity*100:.2f}%)")
-        
-        # Fuse the scores: 50% InsightFace + 50% Facenet
-        embedding_fusion = 0.5 * insightface_similarity + 0.5 * facenet_similarity
+        if facenet_available:
+            facenet_similarity = cosine_similarity(embeddings1['facenet'], embeddings2['facenet'])
+            print(f"  Facenet similarity: {facenet_similarity:.6f} ({facenet_similarity*100:.2f}%)")
+        else:
+            facenet_similarity = None
+            print(f"  Facenet similarity: N/A (model unavailable)")
+
+        # Fuse the scores based on available models
         print(f"\n[EMBEDDING FUSION]")
-        print(f"  InsightFace weight: 50%")
-        print(f"  Facenet weight: 50%")
+        if insightface_available and facenet_available:
+            embedding_fusion = 0.5 * insightface_similarity + 0.5 * facenet_similarity
+            print(f"  InsightFace weight: 50%, Facenet weight: 50%")
+            model_used_str = 'InsightFace + Facenet (Dual Fusion) + Multi-Region'
+        elif insightface_available:
+            embedding_fusion = insightface_similarity
+            facenet_similarity = insightface_similarity  # fallback for result dict
+            print(f"  InsightFace only (Facenet unavailable): 100%")
+            model_used_str = 'InsightFace only + Multi-Region'
+        else:
+            embedding_fusion = facenet_similarity
+            insightface_similarity = facenet_similarity  # fallback for result dict
+            print(f"  Facenet only (InsightFace unavailable): 100%")
+            model_used_str = 'Facenet512 only + Multi-Region'
         print(f"  Fused embedding similarity: {embedding_fusion:.6f} ({embedding_fusion*100:.2f}%)")
         
         # Multi-region similarity (ArcFace only, for enhanced matching)
         print(f"\n[MULTI-REGION SIMILARITY]")
-        print(f"  Extracting region embeddings for enhanced matching...")
-        
-        try:
-            regions1 = extract_region_embeddings(embeddings1['aligned_face'], is_sketch=is_img1_sketch)
-            regions2 = extract_region_embeddings(embeddings2['aligned_face'], is_sketch=is_img2_sketch)
-            
-            if regions1['success'] and regions2['success']:
-                region_results = compute_multi_region_similarity(regions1, regions2)
-                
-                print(f"  Regions used: {', '.join(region_results['regions_used'])}")
-                if region_results['full_face_similarity'] is not None:
-                    print(f"  Full face: {region_results['full_face_similarity']:.6f} ({region_results['full_face_similarity']*100:.2f}%)")
-                if region_results['eyes_similarity'] is not None:
-                    print(f"  Eyes: {region_results['eyes_similarity']:.6f} ({region_results['eyes_similarity']*100:.2f}%)")
-                if region_results['nose_similarity'] is not None:
-                    print(f"  Nose: {region_results['nose_similarity']:.6f} ({region_results['nose_similarity']*100:.2f}%)")
-                if region_results['mouth_similarity'] is not None:
-                    print(f"  Mouth: {region_results['mouth_similarity']:.6f} ({region_results['mouth_similarity']*100:.2f}%)")
-                print(f"  Combined region similarity: {region_results['combined_similarity']:.6f} ({region_results['combined_similarity']*100:.2f}%)")
-                
-                # Use region-based similarity as an additional component
-                multi_region_similarity = region_results['combined_similarity']
-            else:
-                print(f"  [WARNING] Region extraction failed, using full face embedding only")
-                multi_region_similarity = embedding_fusion  # Fallback to combined embedding
-                region_results = None
-        except Exception as e:
-            print(f"  [ERROR] Multi-region similarity failed: {e}")
-            multi_region_similarity = embedding_fusion  # Fallback to combined embedding
+        if not is_insightface_initialized():
+            print(f"  [SKIP] InsightFace unavailable - multi-region skipped, using embedding fusion as fallback")
+            multi_region_similarity = embedding_fusion
             region_results = None
+        else:
+            print(f"  Extracting region embeddings for enhanced matching...")
+            try:
+                regions1 = extract_region_embeddings(embeddings1['aligned_face'], is_sketch=is_img1_sketch)
+                regions2 = extract_region_embeddings(embeddings2['aligned_face'], is_sketch=is_img2_sketch)
+
+                if regions1['success'] and regions2['success']:
+                    region_results = compute_multi_region_similarity(regions1, regions2)
+
+                    print(f"  Regions used: {', '.join(region_results['regions_used'])}")
+                    if region_results['full_face_similarity'] is not None:
+                        print(f"  Full face: {region_results['full_face_similarity']:.6f} ({region_results['full_face_similarity']*100:.2f}%)")
+                    if region_results['eyes_similarity'] is not None:
+                        print(f"  Eyes: {region_results['eyes_similarity']:.6f} ({region_results['eyes_similarity']*100:.2f}%)")
+                    if region_results['nose_similarity'] is not None:
+                        print(f"  Nose: {region_results['nose_similarity']:.6f} ({region_results['nose_similarity']*100:.2f}%)")
+                    if region_results['mouth_similarity'] is not None:
+                        print(f"  Mouth: {region_results['mouth_similarity']:.6f} ({region_results['mouth_similarity']*100:.2f}%)")
+                    print(f"  Combined region similarity: {region_results['combined_similarity']:.6f} ({region_results['combined_similarity']*100:.2f}%)")
+
+                    multi_region_similarity = region_results['combined_similarity']
+                else:
+                    print(f"  [WARNING] Region extraction failed, using full face embedding only")
+                    multi_region_similarity = embedding_fusion
+                    region_results = None
+            except Exception as e:
+                print(f"  [ERROR] Multi-region similarity failed: {e}")
+                multi_region_similarity = embedding_fusion
+                region_results = None
         
         # Compute geometric similarity using aligned faces (same faces used for embeddings)
         print(f"\n[GEOMETRIC SIMILARITY]")
@@ -776,7 +825,7 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
             'match_quality': match_quality,
             'is_cross_domain': bool(is_cross_domain),
             'comparison_type': comparison_type,
-            'model_used': 'InsightFace + Facenet (Dual Fusion) + Multi-Region',
+            'model_used': model_used_str,
             'metric_used': 'hybrid: 85% final_embedding + 15% geometric | final_embedding: 70% fusion + 30% multi-region | fusion: 50% InsightFace + 50% Facenet | multi-region: 55% full + 20% eyes + 15% nose + 10% mouth',
             'scoring_formula': {
                 'final_similarity': '0.85 * final_embedding + 0.15 * geometric',
@@ -789,8 +838,8 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
                     'geometric': '15.0%'
                 }
             },
-            'insightface_embedding_length': int(len(embeddings1['insightface'])),
-            'facenet_embedding_length': int(len(embeddings1['facenet'])),
+            'insightface_embedding_length': int(len(embeddings1['insightface'])) if insightface_available else 0,
+            'facenet_embedding_length': int(len(embeddings1['facenet'])) if facenet_available else 0,
             'embeddings_normalized': True,
             'score_normalization': 'Presentation-level normalization: display = min(95, max(5, raw * 250)). Use raw_similarity for ranking, display_similarity for UI visualization.',
             'processing_time': round(elapsed_time, 3),
@@ -811,6 +860,19 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
                 'raw_eyes': float(region_results['eyes_similarity']) if region_results['eyes_similarity'] is not None else None,
                 'raw_nose': float(region_results['nose_similarity']) if region_results['nose_similarity'] is not None else None,
                 'raw_mouth': float(region_results['mouth_similarity']) if region_results['mouth_similarity'] is not None else None
+            }
+        else:
+            # No region results available - set all to None so frontend knows to hide them
+            result_dict['region_details'] = {
+                'full_face': None,
+                'eyes': None,
+                'nose': None,
+                'mouth': None,
+                'regions_used': [],
+                'raw_full_face': None,
+                'raw_eyes': None,
+                'raw_nose': None,
+                'raw_mouth': None
             }
         
         # Cache the result
