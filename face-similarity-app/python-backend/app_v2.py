@@ -81,6 +81,9 @@ from services.face_comparison_service import (
     compute_geometric_similarity_from_aligned
 )
 
+# Import S3 model loader
+from utils.s3_model_loader import setup_models
+
 app = Flask(__name__)
 CORS(app)
 
@@ -2271,6 +2274,9 @@ if __name__ == '__main__':
     print("[OK] Criminal Database Management")
     print("[OK] Face Comparison with Hybrid Scoring")
     print("=" * 60)
+    
+    # Download models from S3 if not present locally
+    setup_models()
     
     # Initialize DeepFace models on startup
     initialize_models()
