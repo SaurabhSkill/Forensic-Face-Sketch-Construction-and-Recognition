@@ -1,49 +1,80 @@
-# FaceFind Forensics - AI-Powered Face Recognition System
+# 🔍 FaceFind Forensics - AI-Powered Face Recognition System
 
-A complete forensic face matching system with role-based authentication, criminal database management, and AI-powered face comparison using DeepFace.
+A production-ready forensic face matching system with role-based authentication, criminal database management, and advanced AI-powered face comparison using dual embedding models (InsightFace + Facenet512).
 
 ![System Status](https://img.shields.io/badge/status-production--ready-brightgreen)
-![Python](https://img.shields.io/badge/python-3.10-blue)
+![Python](https://img.shields.io/badge/python-3.10+-blue)
 ![React](https://img.shields.io/badge/react-18.x-blue)
-![DeepFace](https://img.shields.io/badge/deepface-0.0.96-orange)
+![TensorFlow](https://img.shields.io/badge/tensorflow-2.13.0-orange)
+![DeepFace](https://img.shields.io/badge/deepface-0.0.93-orange)
 
-## 🎯 Features
+---
 
-### Authentication System
-- **Admin Login**: Two-step authentication with OTP via email
-- **Officer Login**: Simple email + password authentication
-- **Role-Based Access Control**: Admin and Officer roles with different permissions
-- **JWT Token Security**: Secure token-based authentication
-- **Password Management**: First-time password change for officers
+## 🎯 Key Features
 
-### Criminal Database
-- **CRUD Operations**: Add, view, update, and delete criminal records
-- **Photo Management**: Store and retrieve criminal photos
-- **Detailed Profiles**: Comprehensive forensic data including appearance, locations, evidence, etc.
-- **Search Functionality**: Find criminals by various criteria
+### 🔐 Advanced Authentication System
+- **Admin Login**: Two-factor authentication with OTP via email
+- **Officer Login**: Secure email + password authentication
+- **Role-Based Access Control**: Granular permissions for Admin and Officer roles
+- **JWT Token Security**: Industry-standard token-based authentication
+- **Password Management**: Forced password change on first login for officers
+- **Session Management**: Automatic token refresh and secure logout
 
-### Face Comparison (AI-Powered)
-- **DeepFace Integration**: Uses Facenet512 model for accurate face recognition
-- **Sketch-to-Photo Matching**: Compare forensic sketches with criminal photos
+### 👤 Criminal Database Management
+- **Complete CRUD Operations**: Add, view, update, and delete criminal records
+- **AWS S3 Photo Storage**: Scalable cloud storage for criminal photos
+- **Comprehensive Profiles**: Detailed forensic data including:
+  - Personal information (name, aliases, age, gender)
+  - Physical appearance (height, weight, build, complexion)
+  - Identifying marks (scars, tattoos, birthmarks)
+  - Criminal history and evidence
+  - Known locations and associates
+- **Advanced Search**: Multi-criteria search and filtering
+- **Photo Management**: Secure upload, retrieval, and deletion
+
+### 🤖 AI-Powered Face Comparison
+- **Dual Embedding System**: 
+  - InsightFace ArcFace R50 (ONNX) - Primary model
+  - Facenet512 (DeepFace) - Secondary model
+  - Hybrid scoring for maximum accuracy
+- **Sketch-to-Photo Matching**: Advanced cross-domain face matching
+- **Multi-Region Analysis**: Separate scoring for eyes, nose, mouth
+- **Geometric Similarity**: Facial landmark-based comparison
 - **Database Search**: Match uploaded sketches against entire criminal database
-- **Performance Optimization**: Caching system for faster comparisons
-- **Confidence Scoring**: High/Medium/Low confidence levels for matches
+- **FAISS Integration**: Lightning-fast vector similarity search
+- **Performance Optimization**: 
+  - Embedding caching system
+  - Result caching for repeated queries
+  - Precomputed database embeddings
+- **Confidence Scoring**: High/Medium/Low confidence levels with detailed metrics
 
-### Modern UI
-- **Premium Design**: Glassmorphism with dark theme and neon accents
-- **Responsive Layout**: Works on desktop and mobile devices
-- **Smooth Animations**: Professional transitions and effects
-- **Forensic Theme**: Professional government/security aesthetic
+### 🎨 Modern Premium UI
+- **Glassmorphism Design**: Modern glass-effect UI with dark theme
+- **Neon Accents**: Professional forensic/security aesthetic
+- **Responsive Layout**: Optimized for desktop, tablet, and mobile
+- **Smooth Animations**: Professional transitions and micro-interactions
+- **Interactive Components**: Drag-and-drop, real-time updates
+- **Data Visualization**: Charts and graphs for match results
+
+### ☁️ Cloud Infrastructure
+- **AWS S3 Integration**: 
+  - Separate buckets for criminal images and ML models
+  - Automatic model download on deployment
+  - Signed URLs for secure access
+- **PostgreSQL Database**: Supabase-hosted production database
+- **Scalable Architecture**: Ready for horizontal scaling
 
 ---
 
 ## 📋 Prerequisites
 
-Before you begin, ensure you have the following installed:
+Ensure you have the following installed:
 
-- **Python 3.11** - [Download Python](https://www.python.org/downloads/)
+- **Python 3.10+** - [Download Python](https://www.python.org/downloads/)
 - **Node.js 16+** - [Download Node.js](https://nodejs.org/)
 - **Git** - [Download Git](https://git-scm.com/)
+- **AWS Account** (for S3 storage) - [AWS Console](https://aws.amazon.com/)
+- **Supabase Account** (for PostgreSQL) - [Supabase](https://supabase.com/)
 
 ---
 
@@ -52,80 +83,114 @@ Before you begin, ensure you have the following installed:
 ### 1. Clone the Repository
 
 ```bash
-git clone <your-repository-url>
-cd forensic-face-sketch-avishkar
+git clone https://github.com/SaurabhSkill/Forensic-Face-Sketch-Construction-and-Recognition.git
+cd Forensic-Face-Sketch-Construction-and-Recognition
 ```
 
 ### 2. Install Dependencies
 
-#### Install Node Dependencies (Root)
+#### Root Dependencies (Concurrently)
 ```bash
 npm install
 ```
 
-#### Install Python Dependencies
+#### Backend Dependencies
 ```bash
 cd face-similarity-app/python-backend
 pip install -r requirements.txt
 ```
 
-**Note:** If you encounter issues with `pip`, try:
+**Note:** On Windows, if `pip` fails, try:
 ```bash
 python -m pip install -r requirements.txt
+```
+
+#### Frontend Dependencies
+```bash
+cd face-similarity-app/frontend
+npm install
 ```
 
 ### 3. Configure Environment Variables
 
 #### Backend Configuration
-Create `.env` file in `face-similarity-app/python-backend/`:
+
+Create `.env` in `face-similarity-app/python-backend/`:
 
 ```bash
 cd face-similarity-app/python-backend
-copy .env.example .env  # Windows
+cp .env.example .env  # Mac/Linux
 # OR
-cp .env.example .env    # Mac/Linux
+copy .env.example .env  # Windows
 ```
 
-Edit `.env` and add your SMTP credentials:
+Edit `.env` with your credentials:
 
 ```env
-# SMTP Configuration for OTP emails
+# Database (Supabase PostgreSQL)
+DATABASE_URL=postgresql://postgres.[project-ref]:[password]@aws-0-ap-south-1.pooler.supabase.com:6543/postgres
+
+# AWS S3 Configuration
+AWS_ACCESS_KEY_ID=your-aws-access-key-id
+AWS_SECRET_ACCESS_KEY=your-aws-secret-access-key
+AWS_REGION=ap-south-1
+AWS_S3_BUCKET_NAME=criminal-images-bucket-name
+
+# Model S3 Configuration (separate bucket)
+MODEL_S3_BUCKET=forensic-models
+FACENET_S3_KEY=facenet512_weights.h5
+INSIGHTFACE_S3_KEY=w600k_r50.onnx
+
+# JWT Secret (change to random string)
+JWT_SECRET=your-secret-key-change-this
+
+# SMTP Configuration (for OTP emails)
 SMTP_SERVER=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USERNAME=your-email@gmail.com
-SMTP_PASSWORD=your-app-password
-SMTP_FROM_EMAIL=your-email@gmail.com
-SMTP_FROM_NAME=FaceFind Forensics
+SMTP_EMAIL=your-email@gmail.com
+SMTP_PASSWORD=your-gmail-app-password
 
-# JWT Secret (change this to a random string)
-JWT_SECRET=your-secret-key-here-change-this
-
-# Database
-DATABASE_URL=sqlite:///criminal_database.db
+# Server Port
+PORT=5001
 ```
 
 **Getting Gmail App Password:**
-1. Go to Google Account Settings
-2. Security → 2-Step Verification (enable it)
-3. App Passwords → Generate new app password
-4. Copy the 16-character password to `SMTP_PASSWORD`
+1. Enable 2-Step Verification in Google Account
+2. Go to Security → App Passwords
+3. Generate password for "Mail"
+4. Copy 16-character password to `SMTP_PASSWORD`
 
 #### Frontend Configuration
-Create `.env` file in `face-similarity-app/frontend/`:
+
+Create `.env` in `face-similarity-app/frontend/`:
 
 ```bash
 cd face-similarity-app/frontend
-copy .env.example .env  # Windows
+cp .env.example .env  # Mac/Linux
 # OR
-cp .env.example .env    # Mac/Linux
+copy .env.example .env  # Windows
 ```
 
-The default configuration should work:
+Default configuration:
 ```env
-REACT_APP_API_BASE_URL=http://localhost:5001
+REACT_APP_API_URL=http://localhost:5001
 ```
 
-### 4. Initialize Database
+### 4. Upload Models to S3 (One-Time Setup)
+
+Upload the ML model files to your S3 bucket:
+
+```bash
+# Upload Facenet512 model (~90 MB)
+aws s3 cp facenet512_weights.h5 s3://forensic-models/
+
+# Upload InsightFace model (~166 MB)
+aws s3 cp w600k_r50.onnx s3://forensic-models/
+```
+
+**Note:** Models will be automatically downloaded from S3 on first backend startup.
+
+### 5. Initialize Database
 
 Create the admin user:
 
@@ -134,39 +199,36 @@ cd face-similarity-app/python-backend
 python create_admin_auto.py
 ```
 
-This creates an admin account with:
-- **Email**: nickrichard292@gmail.com
+Default admin credentials:
+- **Email**: admin@forensic.gov.in
 - **Password**: Admin123!
 
-**Important:** Change these credentials after first login!
+**⚠️ Change these credentials after first login!**
 
-### 5. Start the Application
+### 6. Start the Application
 
-From the project root directory:
+From the project root:
 
 ```bash
 npm run dev
 ```
 
-This starts both:
-- **Backend** (Python/Flask) on http://localhost:5001
-- **Frontend** (React) on http://localhost:3000
+This starts:
+- **Backend** (Flask) → http://localhost:5001
+- **Frontend** (React) → http://localhost:3000
 
-### 6. Access the Application
+### 7. Access the Application
 
-Open your browser and go to:
-```
-http://localhost:3000
-```
+Open browser: **http://localhost:3000**
 
-**Login as Admin:**
+**Admin Login:**
 1. Click "Admin Login"
 2. Enter email and password
-3. Check your email for OTP
+3. Check email for OTP code
 4. Enter OTP to complete login
 
-**Login as Officer:**
-1. Admin must first create an officer account
+**Officer Login:**
+1. Admin creates officer account
 2. Officer receives temporary password via email
 3. Officer logs in and changes password
 
@@ -175,27 +237,51 @@ http://localhost:3000
 ## 📁 Project Structure
 
 ```
-forensic-face-sketch-avishkar/
+Forensic-Face-Sketch-Construction-and-Recognition/
 ├── face-similarity-app/
-│   ├── frontend/                 # React frontend
+│   ├── frontend/                          # React Frontend
 │   │   ├── public/
+│   │   │   └── assets/                    # Face sketch elements
 │   │   ├── src/
-│   │   │   ├── components/      # Reusable components
-│   │   │   ├── pages/           # Page components
-│   │   │   ├── App.js           # Main app component
-│   │   │   └── index.js         # Entry point
+│   │   │   ├── components/                # Reusable UI components
+│   │   │   ├── pages/                     # Page components
+│   │   │   │   ├── AdminDashboard.js
+│   │   │   │   ├── OfficerDashboard.js
+│   │   │   │   ├── CriminalDatabase.js
+│   │   │   │   ├── FaceComparison.js
+│   │   │   │   └── SketchBuilder.js
+│   │   │   ├── services/                  # API services
+│   │   │   ├── hooks/                     # Custom React hooks
+│   │   │   ├── layout/                    # Layout components
+│   │   │   ├── theme/                     # Theme configuration
+│   │   │   └── App.js
 │   │   ├── package.json
-│   │   └── .env                 # Frontend config
+│   │   └── .env
 │   │
-│   └── python-backend/          # Flask backend
-│       ├── app_v2.py            # Main application (USE THIS)
-│       ├── auth_v2.py           # Authentication logic
-│       ├── database.py          # Database models
-│       ├── requirements.txt     # Python dependencies
-│       ├── .env                 # Backend config (SMTP, JWT)
-│       └── criminal_database.db # SQLite database (auto-created)
+│   └── python-backend/                    # Flask Backend
+│       ├── models/                        # ML model wrappers
+│       │   ├── insightface_model.py       # InsightFace ArcFace R50
+│       │   └── facenet_model.py           # Facenet512
+│       ├── services/                      # Business logic
+│       │   ├── embedding_service.py       # Embedding extraction
+│       │   ├── face_comparison_service.py # Face matching logic
+│       │   ├── faiss_service.py           # Vector search
+│       │   ├── s3_service.py              # AWS S3 operations
+│       │   └── region_analysis_service.py # Facial region analysis
+│       ├── preprocessing/                 # Image preprocessing
+│       │   └── sketch_photo_preprocess.py
+│       ├── utils/                         # Utility functions
+│       │   ├── s3_model_loader.py         # S3 model download
+│       │   ├── file_utils.py
+│       │   ├── cache_utils.py
+│       │   └── similarity_utils.py
+│       ├── app_v2.py                      # Main Flask application
+│       ├── auth_v2.py                     # Authentication logic
+│       ├── database.py                    # Database models
+│       ├── requirements.txt               # Python dependencies
+│       └── .env
 │
-├── package.json                 # Root package.json (npm run dev)
+├── package.json                           # Root package (npm run dev)
 ├── .gitignore
 └── README.md
 ```
@@ -209,177 +295,288 @@ forensic-face-sketch-avishkar/
 ```bash
 npm run dev              # Start both frontend and backend
 npm run dev:frontend     # Start only frontend
-npm run dev:backend      # Start only backend (app_v2.py)
+npm run dev:backend      # Start only backend
 ```
 
 ### Backend Directory
 
 ```bash
-python app_v2.py                    # Start backend server
+python app_v2.py                    # Start Flask server
 python create_admin_auto.py         # Create admin user
-python recreate_database.py         # Reset database (WARNING: deletes all data)
 ```
 
 ### Frontend Directory
 
 ```bash
-npm start                # Start development server
-npm run build            # Create production build
+npm start                # Development server
+npm run build            # Production build
 npm test                 # Run tests
 ```
 
 ---
 
-## 🔐 Default Credentials
+## 📚 API Documentation
 
-**Admin Account:**
-- Email: nickrichard292@gmail.com
-- Password: Admin123!
+### Authentication Endpoints
 
-**Note:** Change these credentials immediately after first login for security!
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/admin/login-step1` | Admin login (email + password) |
+| POST | `/api/auth/admin/login-step2` | Admin OTP verification |
+| POST | `/api/auth/admin/resend-otp` | Resend OTP code |
+| POST | `/api/auth/officer/login` | Officer login |
+| POST | `/api/auth/change-password` | Change password |
+| GET | `/api/auth/verify` | Verify JWT token |
+
+### Admin Management
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/admin/officers` | List all officers |
+| POST | `/api/admin/officers` | Create new officer |
+| POST | `/api/admin/officers/:id/reset-password` | Reset officer password |
+| DELETE | `/api/admin/officers/:id` | Delete officer |
+
+### Criminal Database
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/criminals` | Get all criminals |
+| POST | `/api/criminals` | Add new criminal |
+| GET | `/api/criminals/:id` | Get criminal by ID |
+| PUT | `/api/criminals/:id` | Update criminal |
+| DELETE | `/api/criminals/:id` | Delete criminal |
+| GET | `/api/criminals/:id/photo` | Get criminal photo |
+| POST | `/api/criminals/search` | Search by sketch |
+
+### Face Comparison
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/compare` | Compare two faces |
+| POST | `/api/criminals/search` | Match sketch against database |
+| GET | `/api/cache/stats` | Get cache statistics |
+| POST | `/api/cache/clear` | Clear all caches |
+
+### Health Check
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/health` | Server health status |
 
 ---
 
-## 📚 API Endpoints
+## 🤖 AI Models & Technology
 
-### Authentication
-- `POST /api/auth/admin/login-step1` - Admin login (email + password)
-- `POST /api/auth/admin/login-step2` - Admin OTP verification
-- `POST /api/auth/admin/resend-otp` - Resend OTP
-- `POST /api/auth/officer/login` - Officer login
-- `POST /api/auth/change-password` - Change password
-- `GET /api/auth/verify` - Verify JWT token
+### Dual Embedding System
 
-### Admin Management
-- `GET /api/admin/officers` - List all officers
-- `POST /api/admin/officers` - Add new officer
-- `POST /api/admin/officers/:id/reset-password` - Reset officer password
-- `DELETE /api/admin/officers/:id` - Delete officer
+**Primary Model: InsightFace ArcFace R50**
+- Architecture: ResNet-50 backbone
+- Training: MS1MV3 dataset (5.2M images)
+- Embedding: 512-dimensional L2-normalized vectors
+- Format: ONNX (onnxruntime)
+- Size: 166 MB
+- Accuracy: State-of-the-art on LFW, CFP-FP, AgeDB
 
-### Criminal Database
-- `GET /api/criminals` - Get all criminals
-- `POST /api/criminals` - Add criminal
-- `GET /api/criminals/:id` - Get criminal by ID
-- `GET /api/criminals/:id/photo` - Get criminal photo
-- `DELETE /api/criminals/:id` - Delete criminal
-- `POST /api/criminals/search` - Search by sketch
+**Secondary Model: Facenet512**
+- Architecture: Inception-ResNet-v1
+- Training: VGGFace2 dataset
+- Embedding: 512-dimensional vectors
+- Framework: TensorFlow 2.13 + Keras 2.13
+- Size: 90 MB
+- Purpose: Cross-validation and ensemble scoring
 
-### Face Comparison
-- `POST /api/compare` - Compare two faces
-- `GET /api/cache/stats` - Get cache statistics
-- `POST /api/cache/clear` - Clear caches
+### Hybrid Scoring Algorithm
+
+```
+Final Score = (0.5 × InsightFace) + (0.5 × Facenet512)
+            + Region Weights × (Eyes + Nose + Mouth)
+            + Geometric Similarity Bonus
+```
+
+### Performance Optimizations
+
+- **FAISS Vector Search**: Sub-millisecond similarity search
+- **Embedding Cache**: Precomputed embeddings for all criminals
+- **Result Cache**: LRU cache for repeated queries
+- **Batch Processing**: Parallel embedding extraction
+- **S3 Model Loading**: Automatic download on deployment
 
 ---
 
 ## 🛠️ Troubleshooting
 
-### Backend won't start
+### Backend Issues
 
-**Issue:** `ModuleNotFoundError: No module named 'cv2'`
-
-**Solution:**
+**ModuleNotFoundError: No module named 'cv2'**
 ```bash
-cd face-similarity-app/python-backend
-pip install opencv-python-headless deepface tf-keras
+pip install opencv-python-headless
 ```
 
-### Database errors
-
-**Issue:** Database locked or corrupted
-
-**Solution:**
+**TensorFlow/Keras version conflicts**
 ```bash
-cd face-similarity-app/python-backend
-python recreate_database.py
+pip uninstall tensorflow keras tf-keras
+pip install tensorflow==2.13.0 keras==2.13.1
 ```
 
-**Warning:** This deletes all data!
+**Models not downloading from S3**
+```bash
+# Check S3 configuration
+python -c "from utils.s3_model_loader import setup_models; setup_models()"
 
-### OTP emails not sending
+# Verify AWS credentials
+aws s3 ls s3://forensic-models/
+```
 
-**Issue:** SMTP authentication failed
+### Frontend Issues
 
-**Solution:**
-1. Check `.env` file has correct Gmail credentials
-2. Ensure you're using an App Password (not regular password)
-3. Enable 2-Step Verification in Google Account
-4. Generate new App Password
+**Cannot connect to backend**
+- Ensure backend is running on port 5001
+- Check `.env` has correct `REACT_APP_API_URL`
+- Verify CORS is enabled in Flask
 
-### Port already in use
+**Build fails**
+```bash
+rm -rf node_modules package-lock.json
+npm install
+npm run build
+```
 
-**Issue:** `Address already in use: 5001` or `3000`
+### Database Issues
 
-**Solution:**
+**Connection refused**
+- Check DATABASE_URL in `.env`
+- Verify Supabase project is active
+- Test connection: `psql $DATABASE_URL`
+
+**Table doesn't exist**
+```bash
+python create_admin_auto.py  # Creates tables automatically
+```
+
+### Port Already in Use
 
 **Windows:**
 ```bash
-# Kill process on port 5001
 netstat -ano | findstr :5001
-taskkill /PID <PID> /F
-
-# Kill process on port 3000
-netstat -ano | findstr :3000
 taskkill /PID <PID> /F
 ```
 
 **Mac/Linux:**
 ```bash
-# Kill process on port 5001
 lsof -ti:5001 | xargs kill -9
-
-# Kill process on port 3000
-lsof -ti:3000 | xargs kill -9
 ```
 
-### Frontend can't connect to backend
+---
 
-**Issue:** `ERR_CONNECTION_REFUSED`
+## 🔒 Security Best Practices
 
-**Solution:**
-1. Ensure backend is running: `cd face-similarity-app/python-backend && python app_v2.py`
-2. Check backend is on port 5001
-3. Verify `.env` in frontend has correct API URL
+1. **Change Default Credentials**: Update admin email/password immediately
+2. **Strong JWT Secret**: Use cryptographically random string (32+ characters)
+3. **Environment Variables**: Never commit `.env` files
+4. **HTTPS in Production**: Use SSL/TLS certificates
+5. **Database Security**: Use connection pooling and prepared statements
+6. **S3 Bucket Policies**: Restrict access with IAM policies
+7. **Rate Limiting**: Implement API rate limiting in production
+8. **Input Validation**: All inputs are sanitized and validated
+9. **Password Hashing**: bcrypt with salt rounds
+10. **Token Expiration**: JWT tokens expire after 24 hours
 
 ---
 
-## 🔒 Security Notes
+## 📦 Technology Stack
 
-1. **Change Default Credentials**: Update admin email/password after first login
-2. **JWT Secret**: Change `JWT_SECRET` in `.env` to a random string
-3. **SMTP Credentials**: Never commit `.env` files to Git
-4. **Database**: The `.db` file is gitignored - don't commit it
-5. **Production**: Use environment variables, not `.env` files in production
+### Backend
+- **Framework**: Flask 3.0.3
+- **Database**: PostgreSQL (Supabase)
+- **ORM**: SQLAlchemy 2.0.23
+- **AI/ML**: 
+  - TensorFlow 2.13.0
+  - DeepFace 0.0.93
+  - ONNX Runtime 1.18.0
+  - FAISS 1.7.4
+- **Cloud**: AWS S3 (boto3)
+- **Auth**: bcrypt, PyJWT
+- **Image Processing**: OpenCV 4.10
+
+### Frontend
+- **Framework**: React 18.3.1
+- **Routing**: React Router 6.30
+- **HTTP Client**: Axios 1.11
+- **Charts**: Recharts 3.7
+- **3D Graphics**: Three.js 0.160
+- **UI**: Custom CSS with Glassmorphism
+
+### DevOps
+- **Version Control**: Git
+- **Package Manager**: npm, pip
+- **Process Manager**: Concurrently
+- **Environment**: dotenv
 
 ---
 
-## 📦 Dependencies
+## 🚀 Deployment
 
-### Backend (Python)
-- Flask 3.0.3 - Web framework
-- DeepFace 0.0.96 - Face recognition
-- TensorFlow 2.20.0 - Deep learning
-- OpenCV - Image processing
-- SQLAlchemy - Database ORM
-- bcrypt - Password hashing
-- PyJWT - JWT tokens
+### AWS EC2 Deployment
 
-### Frontend (React)
-- React 18.x - UI framework
-- Axios - HTTP client
-- React Router - Navigation
-- CSS3 - Styling (no external UI library)
+1. **Launch EC2 Instance**
+   - Ubuntu 22.04 LTS
+   - t3.medium or larger (4GB+ RAM)
+   - Security group: Allow ports 80, 443, 5001, 3000
+
+2. **Install Dependencies**
+   ```bash
+   sudo apt update
+   sudo apt install python3.10 python3-pip nodejs npm nginx
+   ```
+
+3. **Clone and Setup**
+   ```bash
+   git clone <repo-url>
+   cd Forensic-Face-Sketch-Construction-and-Recognition
+   npm install
+   cd face-similarity-app/python-backend
+   pip install -r requirements.txt
+   ```
+
+4. **Configure Environment**
+   - Copy `.env.example` to `.env`
+   - Update with production credentials
+   - Set `REACT_APP_API_URL` to EC2 public IP
+
+5. **Setup Nginx**
+   ```nginx
+   server {
+       listen 80;
+       server_name your-domain.com;
+       
+       location / {
+           proxy_pass http://localhost:3000;
+       }
+       
+       location /api {
+           proxy_pass http://localhost:5001;
+       }
+   }
+   ```
+
+6. **Start Services**
+   ```bash
+   # Use PM2 or systemd for production
+   npm run dev
+   ```
 
 ---
 
 ## 🤝 Contributing
 
-This is a forensic project. If you want to contribute:
+Contributions are welcome! Please follow these steps:
 
 1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+2. Create feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit changes (`git commit -m 'Add AmazingFeature'`)
+4. Push to branch (`git push origin feature/AmazingFeature`)
+5. Open Pull Request
 
 ---
 
@@ -389,30 +586,31 @@ This project is for educational and forensic purposes only.
 
 ---
 
-## 👥 Team
+## 👥 Authors
 
 Developed for forensic face matching and criminal identification.
 
 ---
 
+## 🙏 Acknowledgments
+
+- **DeepFace** - Face recognition framework
+- **InsightFace** - State-of-the-art face recognition models
+- **TensorFlow** - Deep learning platform
+- **FAISS** - Efficient similarity search
+- **React** - UI framework
+- **Flask** - Web framework
+
+---
+
 ## 📞 Support
 
-If you encounter any issues:
-
-1. Check the Troubleshooting section above
-2. Review the error messages carefully
-3. Ensure all dependencies are installed
-4. Check that `.env` files are configured correctly
-
----
-
-## 🎉 Acknowledgments
-
-- DeepFace library for face recognition
-- TensorFlow and Keras for deep learning
-- React community for frontend tools
-- Flask for the backend framework
+For issues and questions:
+- Check [Troubleshooting](#-troubleshooting) section
+- Review error messages carefully
+- Ensure all dependencies are installed
+- Verify environment configuration
 
 ---
 
-**Happy Coding! 🚀**
+**Built with ❤️ for Forensic Science**
