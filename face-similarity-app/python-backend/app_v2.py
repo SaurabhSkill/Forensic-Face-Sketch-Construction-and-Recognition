@@ -1397,8 +1397,8 @@ def search_criminals():
             # ================================================================
             print(f"\n[STAGE 1: FAST RETRIEVAL]")
             
-            # Select Top-K candidates for re-ranking (default K=5, max 50 for FAISS)
-            top_k = int(request.form.get('top_k', 5))
+            # Select Top-K candidates for re-ranking (default K=10, max 50 for FAISS)
+            top_k = int(request.form.get('top_k', 10))
             top_k = min(max(top_k, 1), 50)  # Clamp between 1 and 50
             
             # Get all criminal IDs from database
@@ -1663,26 +1663,24 @@ def search_criminals():
                         "percentile":          float((matches.index(match) + 1) / len(matches) * 100)
                     }
 
-                    if z_score >= 1.5:
+                    # Absolute threshold classification — independent of
+                    # database size or distribution, so a single-criminal DB
+                    # doesn't inflate every result to HIGH.
+                    if raw_similarity > 0.4:
                         match['similarity_category'] = 'HIGH'
                         match['confidence_level']    = 'high_similarity'
                         match['confidence_score']    = 85.0
-                        match['match_quality']       = 'Significantly above average - Strong candidate'
-                    elif z_score >= 0.5:
+                        match['match_quality']       = 'High similarity - Strong candidate for investigation'
+                    elif raw_similarity > 0.25:
                         match['similarity_category'] = 'MEDIUM'
                         match['confidence_level']    = 'medium_similarity'
-                        match['confidence_score']    = 65.0
-                        match['match_quality']       = 'Above average - Possible match'
-                    elif z_score >= -0.5:
-                        match['similarity_category'] = 'MEDIUM'
-                        match['confidence_level']    = 'medium_similarity'
-                        match['confidence_score']    = 50.0
-                        match['match_quality']       = 'Near average - Requires verification'
+                        match['confidence_score']    = 60.0
+                        match['match_quality']       = 'Medium similarity - Possible match, worth investigating'
                     else:
                         match['similarity_category'] = 'LOW'
                         match['confidence_level']    = 'low_similarity'
-                        match['confidence_score']    = 35.0
-                        match['match_quality']       = 'Below average - Lower priority'
+                        match['confidence_score']    = 30.0
+                        match['match_quality']       = 'Low similarity - Unlikely match'
 
                     # Normalize all scores for display
                     display_hybrid    = normalize_for_display(raw_similarity)
@@ -1850,9 +1848,9 @@ def search_criminals():
                     "not absolute identification. Manual verification required."
                 ),
                 "interpretation_guide": {
-                    "HIGH":   "Significantly above average (1.5+ std devs) - Priority investigation",
-                    "MEDIUM": "Above or near average (0.5-1.5 std devs) - Worth investigating",
-                    "LOW":    "Below average - Lower priority, but not excluded"
+                    "HIGH":   "Score > 0.4 — Strong candidate, priority investigation",
+                    "MEDIUM": "Score 0.25–0.4 — Possible match, worth investigating",
+                    "LOW":    "Score < 0.25 — Unlikely match, lower priority"
                 }
             }
 

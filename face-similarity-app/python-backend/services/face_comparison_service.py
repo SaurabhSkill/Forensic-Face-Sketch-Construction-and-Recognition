@@ -614,10 +614,10 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
         if insightface_available and facenet_available:
             # Facenet512 is more robust for sketch-to-photo cross-domain matching.
             # InsightFace (ArcFace) is trained on photos and struggles with sketches.
-            # Weight: 80% Facenet + 20% InsightFace
-            embedding_fusion = 0.8 * facenet_similarity + 0.2 * insightface_similarity
-            print(f"  Facenet weight: 80%, InsightFace weight: 20% (sketch-optimized)")
-            model_used_str = 'InsightFace + Facenet (Dual Fusion 80/20) + Multi-Region'
+            # Weight: 85% Facenet + 15% InsightFace
+            embedding_fusion = 0.85 * facenet_similarity + 0.15 * insightface_similarity
+            print(f"  Facenet weight: 85%, InsightFace weight: 15% (sketch-optimized)")
+            model_used_str = 'InsightFace + Facenet (Dual Fusion 85/15) + Multi-Region'
         elif insightface_available:
             embedding_fusion = insightface_similarity
             facenet_similarity = insightface_similarity
@@ -842,7 +842,7 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
             'scoring_formula': {
                 'final_similarity': '0.85 * final_embedding + 0.15 * geometric',
                 'final_embedding': '0.7 * embedding_fusion + 0.3 * multi_region',
-                'embedding_fusion': '0.8 * facenet + 0.2 * insightface',
+                'embedding_fusion': '0.85 * facenet + 0.15 * insightface',
                 'multi_region': '0.55 * full_face + 0.20 * eyes + 0.15 * nose + 0.10 * mouth',
                 'effective_weights': {
                     'embedding_fusion': '59.5%',
