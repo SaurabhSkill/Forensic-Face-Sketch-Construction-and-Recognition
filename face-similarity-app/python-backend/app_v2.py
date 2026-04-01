@@ -1586,7 +1586,8 @@ def search_criminals():
 
             def normalize_for_display(raw_score):
                 """Convert raw similarity to display percentage. Safe against None."""
-                return min(95.0, max(5.0, _safe_float(raw_score) * 250.0))
+                v = _safe_float(raw_score)
+                return min(95.0, max(5.0, (v - 0.2) * 150.0))
 
             if len(matches) > 0:
                 similarities     = [m['similarity_score'] for m in matches]
@@ -1687,7 +1688,7 @@ def search_criminals():
 
                     match['score_normalization'] = (
                         'Presentation-level normalization applied: '
-                        'display = min(95, max(5, raw * 250)). '
+                        'display = min(95, max(5, (raw - 0.2) * 150)). '
                         'Use raw_similarity_score for ranking.'
                     )
 

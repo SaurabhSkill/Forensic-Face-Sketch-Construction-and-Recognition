@@ -770,34 +770,38 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
         # ================================================================
         # Apply presentation-level normalization to make scores more interpretable
         # for sketch-to-photo matching where raw cosine similarities are typically low
-        # 
-        # Formula: display_similarity = min(95, max(5, raw_similarity * 250))
-        # 
-        # This transformation:
-        # - Maps raw similarity [0, 1] to display range [5, 95]
-        # - Amplifies low similarities for better UI presentation
-        # - Maintains relative ordering for ranking
-        # 
-        # Both raw and display values are returned:
-        # - raw_similarity: Used for internal ranking and forensic calculations
-        # - display_similarity: Used for frontend visualization only
-        
+        #
+        # Formula: display_similarity = min(95, max(5, (raw - 0.2) * 150))
+        #
+        # This transformation accounts for the fact that sketch-to-photo cosine
+        # similarities rarely exceed 0.8, and baseline noise sits around 0.2:
+        #   raw=0.20 → display=5%   (noise floor)
+        #   raw=0.40 → display=30%  (low match)
+        #   raw=0.55 → display=52%  (medium match)
+        #   raw=0.65 → display=67%  (good match)
+        #   raw=0.75 → display=82%  (strong match)
+        #   raw=0.83 → display=95%  (cap)
+        #
+        # raw_similarity  → backend ranking and forensic logic (unchanged)
+        # display_similarity → frontend UI only
+
         print(f"[SCORE NORMALIZATION FOR UI]")
         print(f"  Raw similarity: {hybrid_similarity:.4f}")
-        print(f"  Transformation: display = min(95, max(5, raw * 250))")
-        
+        print(f"  Transformation: display = min(95, max(5, (raw - 0.2) * 150))")
+
         def normalize_for_display(raw_score):
-            """Convert raw similarity to display percentage"""
-            return min(95.0, max(5.0, raw_score * 250.0))
-        
+            """Convert raw similarity to display percentage. Safe against None."""
+            v = raw_score if raw_score is not None else 0.0
+            return min(95.0, max(5.0, (float(v) - 0.2) * 150.0))
+
         # Apply display normalization to all similarity scores
-        display_hybrid = normalize_for_display(hybrid_similarity)
-        display_final_embedding = normalize_for_display(final_embedding)
-        display_fusion = normalize_for_display(embedding_fusion)
-        display_insightface = normalize_for_display(insightface_similarity)
-        display_facenet = normalize_for_display(facenet_similarity)
-        display_geometric = normalize_for_display(geometric_similarity)
-        display_multi_region = normalize_for_display(multi_region_similarity)
+        display_hybrid           = normalize_for_display(hybrid_similarity)
+        display_final_embedding  = normalize_for_display(final_embedding)
+        display_fusion           = normalize_for_display(embedding_fusion)
+        display_insightface      = normalize_for_display(insightface_similarity)
+        display_facenet          = normalize_for_display(facenet_similarity)
+        display_geometric        = normalize_for_display(geometric_similarity)
+        display_multi_region     = normalize_for_display(multi_region_similarity)
         
         print(f"  Display similarity: {display_hybrid:.1f}%")
         print(f"  Note: Raw scores preserved for ranking, display scores for UI only")
@@ -841,7 +845,7 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
             'insightface_embedding_length': int(len(embeddings1['insightface'])) if insightface_available else 0,
             'facenet_embedding_length': int(len(embeddings1['facenet'])) if facenet_available else 0,
             'embeddings_normalized': True,
-            'score_normalization': 'Presentation-level normalization: display = min(95, max(5, raw * 250)). Use raw_similarity for ranking, display_similarity for UI visualization.',
+            'score_normalization': 'Presentation-level normalization: display = min(95, max(5, (raw - 0.2) * 150)). Use raw_similarity for ranking, display_similarity for UI visualization.',
             'processing_time': round(elapsed_time, 3),
             'from_cache': False,
             'preprocessing_method': 'align-then-edge (face detected on original, edge applied to aligned face)',
