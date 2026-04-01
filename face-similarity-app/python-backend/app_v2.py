@@ -1531,7 +1531,7 @@ def search_criminals():
                         final_score = min(1.0, final_score + 0.1)
 
                     print(f"  {criminal.full_name}:")
-                    print(f"    Raw Embedding: {embedding_fusion:.4f} → Boosted: {boosted_embedding:.4f}")
+                    print(f"    Raw Embedding: {embedding_fusion:.4f} -> Boosted: {boosted_embedding:.4f}")
                     print(f"    Geometric: {geometric_similarity:.4f}, Region: {region_similarity:.4f}")
                     print(f"    Final Score: {final_score:.4f}")
                     
