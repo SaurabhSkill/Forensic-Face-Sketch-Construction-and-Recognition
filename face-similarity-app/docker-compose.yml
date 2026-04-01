@@ -1,0 +1,32 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ./python-backend
+      dockerfile: Dockerfile
+    container_name: facefind-backend
+    ports:
+      - "5001:5001"
+    env_file:
+      - ./python-backend/.env
+    restart: always
+    networks:
+      - facefind-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: facefind-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: always
+    networks:
+      - facefind-network
+
+networks:
+  facefind-network:
+    driver: bridge

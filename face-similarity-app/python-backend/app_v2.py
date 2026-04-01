@@ -99,13 +99,22 @@ set_temp_uploads_dir(TEMP_UPLOADS_DIR)
 create_tables()
 
 # ============================================================================
-# GLOBAL VARIABLES FOR FACE COMPARISON OPTIMIZATION
+# STARTUP INITIALIZATION — GUNICORN --preload SAFE
+# ============================================================================
+# With Gunicorn --preload, the app module is imported in the MASTER process
+# before workers are forked. We run initialization SYNCHRONOUSLY here so it
+# completes fully before any fork() happens.
+#
+# A file-based flag (/tmp/facefind_startup_complete.flag) is written at the
+# end of startup. All workers (forked or otherwise) check this file — it is
+# visible across all processes on the same host/container.
+#
+# The in-memory thread approach is intentionally removed: threads do not
+# survive fork(), so _STARTUP_DONE / MODEL_INITIALIZED set in the master
+# thread are NOT reliably visible in forked workers.
 # ============================================================================
 
-# Import MODEL_INITIALIZED from embedding service
-from services.embedding_service import MODEL_INITIALIZED
-
-# Import FAISS service functions and variables
+from services.embedding_service import MODEL_INITIALIZED, is_models_initialized
 from services.faiss_service import (
     get_embedding_cache,
     get_embedding_version,
@@ -122,6 +131,240 @@ from services.faiss_service import (
     FAISS_INDEX_DIRTY
 )
 
+# File-based readiness flag — visible to all processes on the same host
+STARTUP_FLAG_PATH = os.path.join(os.path.dirname(__file__), 'startup_complete.flag')
+
+
+# ============================================================================
+# PRECOMPUTE DATABASE EMBEDDINGS
+# ============================================================================
+# Defined HERE — above _run_startup() — so it is in scope when _run_startup()
+# is called synchronously at module level during Gunicorn --preload import.
+# ============================================================================
+
+def precompute_database_embeddings():
+    """
+    Precompute and cache dual embeddings (InsightFace + Facenet) for all criminals in database.
+    Called at startup. Persists embeddings to DB so they survive server restarts.
+    Uses enforce_detection=False so imperfect/sketch-style photos don't cause failures.
+    """
+    print("\n" + "="*60)
+    print("PRECOMPUTING DATABASE DUAL EMBEDDINGS (InsightFace + Facenet)")
+    print("="*60)
+
+    db = next(get_db())
+    try:
+        criminals = db.query(Criminal).all()
+        print(f"Found {len(criminals)} criminals in database")
+
+        updated_count = 0
+        cached_count  = 0
+        failed_count  = 0
+
+        for criminal in criminals:
+            try:
+                # ── Fast path: valid embedding already in DB ──────────────
+                if (
+                    criminal.face_embedding
+                    and isinstance(criminal.face_embedding, dict)
+                    and 'insightface' in criminal.face_embedding
+                    and 'facenet'     in criminal.face_embedding
+                    and criminal.embedding_version == EMBEDDING_VERSION
+                ):
+                    set_cached_embedding(
+                        criminal.criminal_id,
+                        np.array(criminal.face_embedding['insightface']),
+                        np.array(criminal.face_embedding['facenet'])
+                    )
+                    cached_count += 1
+                    print(f"  [OK] Loaded from DB: {criminal.criminal_id}")
+                    continue
+
+                # ── Slow path: compute embeddings from S3 photo ───────────
+                print(f"  [COMPUTE] {criminal.criminal_id} — embedding missing/outdated")
+
+                if not criminal.photo_key:
+                    print(f"  [ERROR] No photo_key for {criminal.criminal_id} — skipping")
+                    failed_count += 1
+                    continue
+
+                signed_url = get_signed_url(criminal.photo_key)
+                if not signed_url:
+                    print(f"  [ERROR] Could not generate signed URL for {criminal.criminal_id} — skipping")
+                    failed_count += 1
+                    continue
+
+                temp_path = generate_temp_filepath(
+                    original_filename=criminal.photo_filename or 'criminal.jpg',
+                    prefix='criminal'
+                )
+                try:
+                    import urllib.request as _urlreq
+                    _urlreq.urlretrieve(signed_url, temp_path)
+
+                    if not os.path.exists(temp_path):
+                        print(f"  [ERROR] Temp file not created for {criminal.criminal_id} — skipping")
+                        failed_count += 1
+                        continue
+
+                    test_img = cv2.imread(temp_path)
+                    if test_img is None:
+                        print(f"  [ERROR] cv2.imread() failed for {criminal.criminal_id} — skipping")
+                        failed_count += 1
+                        continue
+
+                    # enforce_detection=False — tolerate imperfect/non-frontal photos
+                    embeddings = extract_dual_embeddings(
+                        temp_path,
+                        is_sketch=False,
+                        use_adaptive_canny=False
+                    )
+
+                    if not embeddings or not embeddings.get('success'):
+                        print(f"  [ERROR] extract_dual_embeddings failed for {criminal.criminal_id}: "
+                              f"{embeddings.get('error') if embeddings else 'None returned'}")
+                        failed_count += 1
+                        continue
+
+                    insightface_emb = embeddings['insightface']
+                    facenet_emb     = embeddings['facenet']
+
+                    # Mirror missing slot (one model may be unavailable)
+                    if insightface_emb is None and facenet_emb is not None:
+                        insightface_emb = facenet_emb
+                        print(f"  [INFO] InsightFace unavailable — mirroring Facenet for {criminal.criminal_id}")
+                    elif facenet_emb is None and insightface_emb is not None:
+                        facenet_emb = insightface_emb
+                        print(f"  [INFO] Facenet unavailable — mirroring InsightFace for {criminal.criminal_id}")
+
+                    if insightface_emb is None or facenet_emb is None:
+                        print(f"  [ERROR] Both embeddings None for {criminal.criminal_id} — skipping")
+                        failed_count += 1
+                        continue
+
+                    # ── Persist to DB (critical — survives restarts) ──────
+                    criminal.face_embedding = {
+                        'insightface': insightface_emb.tolist(),
+                        'facenet':     facenet_emb.tolist()
+                    }
+                    criminal.embedding_version = EMBEDDING_VERSION
+                    db.commit()
+
+                    # ── Populate in-memory cache ──────────────────────────
+                    set_cached_embedding(criminal.criminal_id, insightface_emb, facenet_emb)
+
+                    updated_count += 1
+                    print(f"  [OK] Computed + persisted embeddings for {criminal.criminal_id}")
+
+                finally:
+                    cleanup_temp_file(temp_path)
+
+            except Exception as e:
+                print(f"  [ERROR] Unexpected error for {criminal.criminal_id}: {e}")
+                traceback.print_exc()
+                failed_count += 1
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+                continue
+
+        print(f"\n[SUMMARY]")
+        print(f"  Loaded from DB cache : {cached_count}")
+        print(f"  Newly computed       : {updated_count}")
+        print(f"  Failed               : {failed_count}")
+        print(f"  Total in memory cache: {get_cache_size()}")
+        print("="*60 + "\n")
+
+        # Build FAISS index after all embeddings are in cache
+        build_faiss_index()
+
+    except Exception as e:
+        print(f"[ERROR] precompute_database_embeddings() failed: {e}")
+        traceback.print_exc()
+    finally:
+        db.close()
+
+
+def _is_startup_complete() -> bool:
+    """Cross-process readiness check — reads flag file."""
+    return os.path.isfile(STARTUP_FLAG_PATH)
+
+
+def _mark_startup_complete():
+    """Write flag file so all workers see startup as done."""
+    try:
+        with open(STARTUP_FLAG_PATH, 'w') as f:
+            f.write(datetime.now(timezone.utc).isoformat())
+        print(f"[STARTUP] Flag written: {STARTUP_FLAG_PATH}", flush=True)
+    except Exception as e:
+        print(f"[STARTUP] [WARNING] Could not write flag file: {e}", flush=True)
+
+
+def _clear_startup_flag():
+    """Remove flag file — called once at process start to force re-init."""
+    try:
+        if os.path.isfile(STARTUP_FLAG_PATH):
+            os.remove(STARTUP_FLAG_PATH)
+    except Exception:
+        pass
+
+
+def _run_startup():
+    """
+    Synchronous full ML pipeline initialization.
+    Runs in the Gunicorn master process (before fork) when --preload is used.
+    Writes a file-based flag on completion so all forked workers see it.
+    """
+    import sys
+    sys.stdout.reconfigure(line_buffering=True)
+
+    print("\n" + "=" * 60)
+    print("FaceFind Forensics API v2 — Startup Initialization")
+    print("=" * 60)
+
+    # Step 1: Download models from S3 if not present locally
+    print("[STARTUP] Step 1: Checking/downloading ML models from S3...")
+    try:
+        setup_models()
+    except Exception as e:
+        print(f"[STARTUP] [ERROR] setup_models() failed: {e}")
+        traceback.print_exc()
+
+    # Step 2: Initialize face recognition models (InsightFace + Facenet512)
+    print("[STARTUP] Step 2: Initializing face recognition models...")
+    try:
+        initialize_models()
+    except Exception as e:
+        print(f"[STARTUP] [ERROR] initialize_models() failed: {e}")
+        traceback.print_exc()
+
+    # Step 3: Precompute embeddings for all criminals in DB + build FAISS index
+    print("[STARTUP] Step 3: Precomputing database embeddings + building FAISS index...")
+    print(f"[DEBUG] precompute_database_embeddings available: {callable(precompute_database_embeddings)}")
+    try:
+        precompute_database_embeddings()
+    except Exception as e:
+        print(f"[STARTUP] [ERROR] precompute_database_embeddings() failed: {e}")
+        traceback.print_exc()
+
+    # Write cross-process flag ONLY after all steps complete
+    _mark_startup_complete()
+
+    print(f"[STARTUP] MODEL_INITIALIZED = {is_models_initialized()}")
+    print(f"[STARTUP] FAISS ready       = {is_faiss_index_ready()}")
+    print(f"[STARTUP] Embedding cache   = {get_cache_size()} entries")
+    print(f"[STARTUP] Flag file         = {STARTUP_FLAG_PATH}")
+    print("[STARTUP] Initialization complete.")
+    print("=" * 60 + "\n")
+    sys.stdout.flush()
+
+
+# Remove stale flag from any previous run so startup always re-runs fresh
+_clear_startup_flag()
+
+# Run synchronously — completes before Gunicorn forks workers (--preload)
+_run_startup()
 
 # ============================================================================
 # FACE COMPARISON HELPER FUNCTIONS
@@ -136,146 +379,6 @@ from services.faiss_service import (
 # - compute_geometric_similarity_from_aligned()
 # - forensic_face_comparison()
 # ============================================================================
-
-
-def precompute_database_embeddings():
-    """
-    Precompute and cache dual embeddings (InsightFace + Facenet) for all criminals in database
-    Called at startup
-    """
-    print("\n" + "="*60)
-    print("PRECOMPUTING DATABASE DUAL EMBEDDINGS (InsightFace + Facenet)")
-    print("="*60)
-    
-    db = next(get_db())
-    try:
-        criminals = db.query(Criminal).all()
-        print(f"Found {len(criminals)} criminals in database")
-        
-        updated_count = 0
-        cached_count = 0
-        failed_count = 0
-        
-        for criminal in criminals:
-            try:
-                # Check if embedding already exists and is current version
-                if criminal.face_embedding and criminal.embedding_version == EMBEDDING_VERSION:
-                    # Load from database (stored as dict with arcface and facenet keys)
-                    embedding_data = criminal.face_embedding
-                    if isinstance(embedding_data, dict) and 'insightface' in embedding_data and 'facenet' in embedding_data:
-                        set_cached_embedding(
-                            criminal.criminal_id,
-                            np.array(embedding_data['insightface']),
-                            np.array(embedding_data['facenet'])
-                        )
-                        cached_count += 1
-                        print(f"  [OK] Loaded cached dual embeddings for {criminal.criminal_id}")
-                    else:
-                        # Old format, need to recompute
-                        print(f"  [INFO] Old embedding format for {criminal.criminal_id}, recomputing...")
-                        raise ValueError("Old embedding format")
-                else:
-                    # Compute new dual embeddings
-                    print(f"  Computing dual embeddings for {criminal.criminal_id}...")
-                    
-                    # Validate photo key exists
-                    if not criminal.photo_key:
-                        print(f"  [ERROR] No photo_key for {criminal.criminal_id}")
-                        failed_count += 1
-                        continue
-                    
-                    # Download photo from S3 to temp file
-                    temp_path = generate_temp_filepath(original_filename=criminal.photo_filename or 'criminal.jpg', prefix='criminal')
-                    try:
-                        signed_url = get_signed_url(criminal.photo_key)
-                        if not signed_url:
-                            print(f"  [ERROR] Could not generate signed URL for {criminal.criminal_id}")
-                            failed_count += 1
-                            continue
-                        import urllib.request
-                        urllib.request.urlretrieve(signed_url, temp_path)
-                        
-                        # Validate temp file was created
-                        if not os.path.exists(temp_path):
-                            print(f"  [ERROR] Failed to create temp file for {criminal.criminal_id}")
-                            failed_count += 1
-                            continue
-                        
-                        # Validate file can be read by cv2
-                        test_img = cv2.imread(temp_path)
-                        if test_img is None:
-                            print(f"  [ERROR] cv2.imread() failed - photo data is corrupted for {criminal.criminal_id}")
-                            failed_count += 1
-                            cleanup_temp_file(temp_path)
-                            continue
-                        
-                        # Extract dual embeddings
-                        embeddings = extract_dual_embeddings(temp_path, is_sketch=False)
-                        
-                        if embeddings and embeddings['success']:
-                            insightface_emb = embeddings['insightface']
-                            facenet_emb = embeddings['facenet']
-
-                            # When one model is unavailable, mirror the other so the
-                            # cache always holds a valid 512-D vector for both slots.
-                            # FAISS requires non-None arrays for both arcface and facenet.
-                            if insightface_emb is None and facenet_emb is not None:
-                                insightface_emb = facenet_emb
-                                print(f"  [INFO] InsightFace unavailable - mirroring Facenet for {criminal.criminal_id}")
-                            elif facenet_emb is None and insightface_emb is not None:
-                                facenet_emb = insightface_emb
-                                print(f"  [INFO] Facenet unavailable - mirroring InsightFace for {criminal.criminal_id}")
-
-                            if insightface_emb is None or facenet_emb is None:
-                                print(f"  [ERROR] Both embeddings None for {criminal.criminal_id}, skipping")
-                                failed_count += 1
-                                continue
-
-                            # Store in cache using FAISS service
-                            set_cached_embedding(
-                                criminal.criminal_id,
-                                insightface_emb,
-                                facenet_emb
-                            )
-                            
-                            # Update database (store as dict)
-                            criminal.face_embedding = {
-                                'insightface': insightface_emb.tolist(),
-                                'facenet': facenet_emb.tolist()
-                            }
-                            criminal.embedding_version = EMBEDDING_VERSION
-                            db.commit()
-                            
-                            updated_count += 1
-                            print(f"  [OK] Computed and stored dual embeddings for {criminal.criminal_id}")
-                        else:
-                            print(f"  [ERROR] Failed to compute dual embeddings for {criminal.criminal_id}")
-                            failed_count += 1
-                    
-                    finally:
-                        # Cleanup temp file
-                        cleanup_temp_file(temp_path)
-                        
-            except Exception as e:
-                print(f"  [ERROR] Error processing {criminal.criminal_id}: {e}")
-                failed_count += 1
-                continue
-        
-        print(f"\n[SUMMARY]")
-        print(f"  Cached dual embeddings: {cached_count}")
-        print(f"  Newly computed: {updated_count}")
-        print(f"  Failed: {failed_count}")
-        print(f"  Total in cache: {get_cache_size()}")
-        print("="*60 + "\n")
-        
-        # Build FAISS index after all embeddings are cached
-        build_faiss_index()
-        
-    except Exception as e:
-        print(f"[ERROR] Precomputation failed: {e}")
-        traceback.print_exc()
-    finally:
-        db.close()
 
 
 # ============================================================================
@@ -1021,13 +1124,13 @@ def add_criminal():
         # ================================================================
         # Extract embeddings and rebuild FAISS index so the new criminal
         # becomes searchable immediately without server restart
-        
+
         try:
             print(f"\n[EMBEDDING EXTRACTION] Processing new criminal: {new_criminal.full_name}")
-            
+
             # Save photo to temporary file for embedding extraction
             temp_photo_path = save_bytes_to_temp(photo_data, photo_file.filename or 'criminal.jpg')
-            
+
             try:
                 # Extract dual embeddings (InsightFace + Facenet)
                 embeddings = extract_dual_embeddings(
@@ -1035,28 +1138,64 @@ def add_criminal():
                     is_sketch=False,
                     use_adaptive_canny=False
                 )
-                
-                # Store embeddings in cache
-                set_cached_embedding(
-                    criminal_id=new_criminal.criminal_id,
-                    insightface_embedding=embeddings['insightface'],
-                    facenet_embedding=embeddings['facenet']
-                )
-                
-                print(f"  [OK] Embeddings cached for criminal_id: {new_criminal.criminal_id}")
-                
-                # Rebuild FAISS index (automatically marks as dirty and rebuilds)
-                print(f"  [FAISS] Rebuilding index to include new criminal...")
-                build_faiss_index()
-                print(f"  [OK] FAISS index rebuilt - new criminal is now searchable")
-                
+
+                if embeddings and embeddings.get('success'):
+                    insightface_emb = embeddings['insightface']
+                    facenet_emb     = embeddings['facenet']
+
+                    # Mirror missing slot if one model is unavailable
+                    if insightface_emb is None and facenet_emb is not None:
+                        insightface_emb = facenet_emb
+                        print(f"  [INFO] InsightFace unavailable — mirroring Facenet")
+                    elif facenet_emb is None and insightface_emb is not None:
+                        facenet_emb = insightface_emb
+                        print(f"  [INFO] Facenet unavailable — mirroring InsightFace")
+
+                    if insightface_emb is not None and facenet_emb is not None:
+                        # ── Persist embeddings to DB (survives restarts) ──
+                        db2 = next(get_db())
+                        try:
+                            db_criminal = db2.query(Criminal).filter(
+                                Criminal.criminal_id == new_criminal.criminal_id
+                            ).first()
+                            if db_criminal:
+                                db_criminal.face_embedding = {
+                                    'insightface': insightface_emb.tolist(),
+                                    'facenet':     facenet_emb.tolist()
+                                }
+                                db_criminal.embedding_version = EMBEDDING_VERSION
+                                db2.commit()
+                                print(f"  [OK] Embeddings persisted to DB for: {new_criminal.criminal_id}")
+                        except Exception as db_err:
+                            db2.rollback()
+                            print(f"  [WARNING] Failed to persist embeddings to DB: {db_err}")
+                        finally:
+                            db2.close()
+
+                        # ── Populate in-memory cache ──────────────────────
+                        set_cached_embedding(
+                            criminal_id=new_criminal.criminal_id,
+                            insightface_embedding=insightface_emb,
+                            facenet_embedding=facenet_emb
+                        )
+                        print(f"  [OK] Embeddings cached in memory for: {new_criminal.criminal_id}")
+
+                        # ── Rebuild FAISS index ───────────────────────────
+                        print(f"  [FAISS] Rebuilding index to include new criminal...")
+                        build_faiss_index()
+                        print(f"  [OK] FAISS index rebuilt — new criminal is now searchable")
+                    else:
+                        print(f"  [WARNING] Both embeddings None — criminal saved but not searchable")
+                else:
+                    err = embeddings.get('error') if embeddings else 'None returned'
+                    print(f"  [WARNING] Embedding extraction failed: {err}")
+                    print(f"  [WARNING] Criminal saved but not immediately searchable")
+
             finally:
-                # Clean up temporary file
                 cleanup_temp_file(temp_photo_path)
-                
+
         except Exception as e:
-            # Log error but don't fail the request
-            # Criminal is saved, but won't be searchable until manual index rebuild
+            # Log error but don't fail the request — criminal record is already saved
             print(f"  [WARNING] Failed to update FAISS index: {e}")
             print(f"  [WARNING] Criminal saved but not immediately searchable")
             traceback.print_exc()
@@ -1200,34 +1339,45 @@ def delete_criminal(criminal_id):
 def search_criminals():
     """Search for criminals using a sketch - OPTIMIZED with precomputed embeddings"""
     import sys
+
+    # ── Model readiness guard ─────────────────────────────────────────────
+    # Check file-based flag — visible across all Gunicorn worker processes.
+    if not _is_startup_complete():
+        print(f"[search_criminals] Startup flag missing — system not ready.", flush=True)
+        print(f"[search_criminals] MODEL_INITIALIZED = {is_models_initialized()}", flush=True)
+        print(f"[search_criminals] Flag path: {STARTUP_FLAG_PATH}", flush=True)
+        return jsonify({
+            "error": "Face recognition models are still initializing. Please retry in a moment."
+        }), 503
+
     print("\n" + "="*60, flush=True)
     print("CRIMINAL SEARCH STARTED (OPTIMIZED)", flush=True)
     print("="*60, flush=True)
     sys.stdout.flush()
-    
+
     db = None
     try:
         if 'sketch' not in request.files:
             return jsonify({"error": "Sketch file is required"}), 400
-        
+
         sketch_file = request.files['sketch']
         threshold = float(request.form.get('threshold', 0.4))  # Distance threshold (lower = more similar)
-        
+
         print(f"Sketch file received: {sketch_file.filename}")
         print(f"Distance threshold: {threshold}")
-        
+
         # Save sketch to temporary file
         sketch_path = save_temp_file(sketch_file)
         print(f"Sketch saved to: {sketch_path}")
-        
+
         try:
             # Extract DUAL embeddings for query sketch ONCE
             print(f"\n[QUERY DUAL EMBEDDING] Extracting dual embeddings (InsightFace + Facenet) for sketch...")
             query_embeddings = extract_dual_embeddings(sketch_path, is_sketch=True)
-            
+
             if query_embeddings is None or not query_embeddings['success']:
                 return jsonify({"error": "Failed to extract dual embeddings from sketch"}), 400
-            
+
             print(f"  [OK] Query dual embeddings extracted:")
             if query_embeddings['insightface'] is not None:
                 print(f"    InsightFace: length={len(query_embeddings['insightface'])}, normalized")
@@ -1320,7 +1470,7 @@ def search_criminals():
                         criminal_face_objs = detection.extract_faces(
                             img_path=criminal_photo_path,
                             detector_backend='opencv',
-                            enforce_detection=True,
+                            enforce_detection=False,
                             align=True,
                             grayscale=False
                         )
@@ -1416,215 +1566,193 @@ def search_criminals():
             # ================================================================
             # SIMILARITY DISTRIBUTION ANALYSIS
             # ================================================================
-            
+
+            # Safe defaults — used even when matches is empty
+            mean_similarity   = 0.0
+            std_similarity    = 0.0
+            min_similarity    = 0.0
+            max_similarity    = 0.0
+            median_similarity = 0.0
             distribution_stats = {}
-            
+
+            def _safe_float(v):
+                """Convert any numeric value (including np types) to Python float. None → 0.0."""
+                if v is None:
+                    return 0.0
+                try:
+                    return float(v)
+                except (TypeError, ValueError):
+                    return 0.0
+
+            def normalize_for_display(raw_score):
+                """Convert raw similarity to display percentage. Safe against None."""
+                return min(95.0, max(5.0, _safe_float(raw_score) * 250.0))
+
             if len(matches) > 0:
-                similarities = [m['similarity_score'] for m in matches]
+                similarities     = [m['similarity_score'] for m in matches]
                 embedding_fusions = [m['embedding_fusion'] for m in matches]
                 insightface_sims = [m['insightface_similarity'] for m in matches]
-                facenet_sims = [m['facenet_similarity'] for m in matches]
-                geometric_sims = [m['geometric_similarity'] for m in matches]
-                
-                # Compute statistics
-                mean_similarity = float(np.mean(similarities))
-                std_similarity = float(np.std(similarities))
-                min_similarity = float(np.min(similarities))
-                max_similarity = float(np.max(similarities))
+                facenet_sims     = [m['facenet_similarity'] for m in matches]
+                geometric_sims   = [m['geometric_similarity'] for m in matches]
+
+                mean_similarity   = float(np.mean(similarities))
+                std_similarity    = float(np.std(similarities))
+                min_similarity    = float(np.min(similarities))
+                max_similarity    = float(np.max(similarities))
                 median_similarity = float(np.median(similarities))
-                
+
                 distribution_stats = {
-                    "mean": mean_similarity,
-                    "std_dev": std_similarity,
-                    "min": min_similarity,
-                    "max": max_similarity,
-                    "median": median_similarity,
-                    "total_candidates": len(matches),
+                    "mean":                  mean_similarity,
+                    "std_dev":               std_similarity,
+                    "min":                   min_similarity,
+                    "max":                   max_similarity,
+                    "median":                median_similarity,
+                    "total_candidates":      len(matches),
                     "mean_embedding_fusion": float(np.mean(embedding_fusions)),
-                    "mean_arcface": float(np.mean([s for s in insightface_sims if s is not None])) if any(s is not None for s in insightface_sims) else None,
-                    "mean_facenet": float(np.mean([s for s in facenet_sims if s is not None])) if any(s is not None for s in facenet_sims) else None,
-                    "mean_geometric": float(np.mean(geometric_sims))
+                    "mean_arcface":          float(np.mean([s for s in insightface_sims if s is not None])) if any(s is not None for s in insightface_sims) else None,
+                    "mean_facenet":          float(np.mean([s for s in facenet_sims if s is not None])) if any(s is not None for s in facenet_sims) else None,
+                    "mean_geometric":        float(np.mean(geometric_sims))
                 }
-                
+
                 print(f"\n[SIMILARITY DISTRIBUTION]")
                 print(f"  Total candidates: {len(matches)}")
                 print(f"  Mean similarity: {mean_similarity:.4f} ({mean_similarity*100:.1f}%)")
                 print(f"  Std deviation: {std_similarity:.4f}")
                 print(f"  Range: [{min_similarity:.4f}, {max_similarity:.4f}]")
                 print(f"  Median: {median_similarity:.4f}")
-                
-                # Identify candidates significantly above average
-                # Using 1 standard deviation above mean as threshold
+
                 above_avg_threshold = mean_similarity + std_similarity
-                
+
                 for match in matches:
-                    raw_similarity = match['similarity_score']
-                    raw_fusion = match['embedding_fusion']
-                    raw_arcface = match['insightface_similarity']
-                    raw_facenet = match['facenet_similarity']
-                    raw_geometric = match['geometric_similarity']
-                    
-                    # Calculate z-score (how many std devs above/below mean)
-                    if std_similarity > 0:
-                        z_score = (raw_similarity - mean_similarity) / std_similarity
-                    else:
-                        z_score = 0.0
-                    
-                    # Determine if significantly above average
+                    raw_similarity = _safe_float(match['similarity_score'])
+                    raw_fusion     = _safe_float(match['embedding_fusion'])
+                    raw_arcface    = _safe_float(match['insightface_similarity'])
+                    raw_facenet    = _safe_float(match['facenet_similarity'])
+                    raw_geometric  = _safe_float(match['geometric_similarity'])
+
+                    z_score = (raw_similarity - mean_similarity) / std_similarity if std_similarity > 0 else 0.0
                     is_above_average = raw_similarity > above_avg_threshold
-                    
-                    # Store analysis
+
                     match['statistical_analysis'] = {
-                        "z_score": float(z_score),
-                        "above_average": bool(is_above_average),
+                        "z_score":             float(z_score),
+                        "above_average":       bool(is_above_average),
                         "deviation_from_mean": float(raw_similarity - mean_similarity),
-                        "percentile": float((matches.index(match) + 1) / len(matches) * 100)
+                        "percentile":          float((matches.index(match) + 1) / len(matches) * 100)
                     }
-                    
-                    # Assign category based on statistical position
-                    if z_score >= 1.5:  # 1.5+ std devs above mean
+
+                    if z_score >= 1.5:
                         match['similarity_category'] = 'HIGH'
-                        match['confidence_level'] = 'high_similarity'
-                        match['confidence_score'] = 85.0
-                        match['match_quality'] = 'Significantly above average - Strong candidate'
-                    elif z_score >= 0.5:  # 0.5-1.5 std devs above mean
+                        match['confidence_level']    = 'high_similarity'
+                        match['confidence_score']    = 85.0
+                        match['match_quality']       = 'Significantly above average - Strong candidate'
+                    elif z_score >= 0.5:
                         match['similarity_category'] = 'MEDIUM'
-                        match['confidence_level'] = 'medium_similarity'
-                        match['confidence_score'] = 65.0
-                        match['match_quality'] = 'Above average - Possible match'
-                    elif z_score >= -0.5:  # Within 0.5 std devs of mean
+                        match['confidence_level']    = 'medium_similarity'
+                        match['confidence_score']    = 65.0
+                        match['match_quality']       = 'Above average - Possible match'
+                    elif z_score >= -0.5:
                         match['similarity_category'] = 'MEDIUM'
-                        match['confidence_level'] = 'medium_similarity'
-                        match['confidence_score'] = 50.0
-                        match['match_quality'] = 'Near average - Requires verification'
-                    else:  # Below average
+                        match['confidence_level']    = 'medium_similarity'
+                        match['confidence_score']    = 50.0
+                        match['match_quality']       = 'Near average - Requires verification'
+                    else:
                         match['similarity_category'] = 'LOW'
-                        match['confidence_level'] = 'low_similarity'
-                        match['confidence_score'] = 35.0
-                        match['match_quality'] = 'Below average - Lower priority'
-                    
-                    # ================================================================
-                    # SCORE NORMALIZATION FOR UI PRESENTATION
-                    # ================================================================
-                    # Apply presentation-level normalization to make scores more interpretable
-                    # for sketch-to-photo matching where raw cosine similarities are typically low
-                    # 
-                    # Formula: display_similarity = min(95, max(5, raw_similarity * 250))
-                    # 
-                    # This transformation:
-                    # - Maps raw similarity [0, 1] to display range [5, 95]
-                    # - Amplifies low similarities for better UI presentation
-                    # - Maintains relative ordering for ranking
-                    # 
-                    # Both raw and display values are returned:
-                    # - raw_similarity: Used for internal ranking and forensic calculations
-                    # - display_similarity: Used for frontend visualization only
-                    
-                    def normalize_for_display(raw_score):
-                        """Convert raw similarity to display percentage"""
-                        return min(95.0, max(5.0, raw_score * 250.0))
-                    
-                    # Apply display normalization to all similarity scores
-                    display_hybrid = normalize_for_display(raw_similarity)
-                    display_fusion = normalize_for_display(raw_fusion)
-                    display_arcface = normalize_for_display(raw_arcface)
-                    display_facenet = normalize_for_display(raw_facenet)
+                        match['confidence_level']    = 'low_similarity'
+                        match['confidence_score']    = 35.0
+                        match['match_quality']       = 'Below average - Lower priority'
+
+                    # Normalize all scores for display
+                    display_hybrid    = normalize_for_display(raw_similarity)
+                    display_fusion    = normalize_for_display(raw_fusion)
+                    display_arcface   = normalize_for_display(raw_arcface)
+                    display_facenet   = normalize_for_display(raw_facenet)
                     display_geometric = normalize_for_display(raw_geometric)
-                    
-                    # Update match with normalized scores
-                    match['similarity_score'] = float(display_hybrid)
-                    match['raw_similarity_score'] = float(raw_similarity)
-                    match['display_similarity'] = float(display_hybrid)
-                    match['embedding_fusion'] = float(display_fusion)
-                    match['raw_embedding_fusion'] = float(raw_fusion)
-                    match['insightface_similarity'] = float(display_arcface)
+
+                    match['similarity_score']          = float(display_hybrid)
+                    match['raw_similarity_score']      = float(raw_similarity)
+                    match['display_similarity']        = float(display_hybrid)
+                    match['embedding_fusion']          = float(display_fusion)
+                    match['raw_embedding_fusion']      = float(raw_fusion)
+                    match['insightface_similarity']    = float(display_arcface)
                     match['raw_insightface_similarity'] = float(raw_arcface)
-                    match['facenet_similarity'] = float(display_facenet)
-                    match['raw_facenet_similarity'] = float(raw_facenet)
-                    match['geometric_similarity'] = float(display_geometric)
-                    match['raw_geometric_similarity'] = float(raw_geometric)
-                    
-                    # Add region similarity if available
+                    match['facenet_similarity']        = float(display_facenet)
+                    match['raw_facenet_similarity']    = float(raw_facenet)
+                    match['geometric_similarity']      = float(display_geometric)
+                    match['raw_geometric_similarity']  = float(raw_geometric)
+
                     if 'region_similarity' in match:
-                        raw_region = match['region_similarity']
-                        display_region = normalize_for_display(raw_region)
-                        match['region_similarity'] = float(display_region)
+                        raw_region = _safe_float(match['region_similarity'])
+                        match['region_similarity']     = float(normalize_for_display(raw_region))
                         match['raw_region_similarity'] = float(raw_region)
-                    
-                    match['score_normalization'] = 'Presentation-level normalization applied: display = min(95, max(5, raw * 250)). Use raw_similarity_score for ranking.'
-                    
-                    # Add detailed explanation for each result
-                    explanation = {
+
+                    match['score_normalization'] = (
+                        'Presentation-level normalization applied: '
+                        'display = min(95, max(5, raw * 250)). '
+                        'Use raw_similarity_score for ranking.'
+                    )
+
+                    match['explanation'] = {
                         "final_score": {
-                            "value": float(display_hybrid),
-                            "percentage": f"{display_hybrid:.1f}%",
-                            "raw_value": float(raw_similarity),
+                            "value":       float(display_hybrid),
+                            "percentage":  f"{display_hybrid:.1f}%",
+                            "raw_value":   float(raw_similarity),
                             "description": "Two-stage re-ranking score: 60% embedding + 25% geometric + 15% region"
                         },
                         "embedding_fusion": {
-                            "value": float(display_fusion),
-                            "percentage": f"{display_fusion:.1f}%",
-                            "raw_value": float(raw_fusion),
+                            "value":       float(display_fusion),
+                            "percentage":  f"{display_fusion:.1f}%",
+                            "raw_value":   float(raw_fusion),
                             "description": "Fused embedding similarity: 50% ArcFace + 50% Facenet512",
-                            "weight": "60%"
+                            "weight":      "60%"
                         },
                         "insightface_similarity": {
-                            "value": float(display_arcface),
-                            "percentage": f"{display_arcface:.1f}%",
-                            "raw_value": float(raw_arcface),
+                            "value":       float(display_arcface),
+                            "percentage":  f"{display_arcface:.1f}%",
+                            "raw_value":   float(raw_arcface),
                             "description": "ArcFace model similarity",
-                            "weight": "50% of fusion"
+                            "weight":      "50% of fusion"
                         },
                         "facenet_similarity": {
-                            "value": float(display_facenet),
-                            "percentage": f"{display_facenet:.1f}%",
-                            "raw_value": float(raw_facenet),
+                            "value":       float(display_facenet),
+                            "percentage":  f"{display_facenet:.1f}%",
+                            "raw_value":   float(raw_facenet),
                             "description": "Facenet512 model similarity",
-                            "weight": "50% of fusion"
+                            "weight":      "50% of fusion"
                         },
                         "geometric_similarity": {
-                            "value": float(display_geometric),
-                            "percentage": f"{display_geometric:.1f}%",
-                            "raw_value": float(raw_geometric),
+                            "value":       float(display_geometric),
+                            "percentage":  f"{display_geometric:.1f}%",
+                            "raw_value":   float(raw_geometric),
                             "description": "Facial structure and landmark similarity",
-                            "weight": "25%"
+                            "weight":      "25%"
                         },
                         "statistical_position": {
-                            "z_score": float(z_score),
+                            "z_score":     float(z_score),
                             "description": f"{'Above' if z_score > 0 else 'Below'} average by {abs(z_score):.2f} standard deviations"
                         }
                     }
-                    
-                    # Add region similarity to explanation if available
+
                     if 'region_similarity' in match:
-                        explanation["region_similarity"] = {
-                            "value": float(match['region_similarity']),
-                            "percentage": f"{match['region_similarity']:.1f}%",
-                            "raw_value": float(match['raw_region_similarity']),
+                        match['explanation']['region_similarity'] = {
+                            "value":       float(match['region_similarity']),
+                            "percentage":  f"{match['region_similarity']:.1f}%",
+                            "raw_value":   float(match['raw_region_similarity']),
                             "description": "Multi-region similarity (eyes, nose, mouth)",
-                            "weight": "15%"
+                            "weight":      "15%"
                         }
-                    
-                    match['explanation'] = explanation
             
-            # Return top 5 matches by default (re-ranked results)
-            # Allow configurable top_n via query parameter
-            top_n = int(request.form.get('top_n', 5))  # Default to 5 for re-ranked results
-            top_n = min(max(top_n, 1), 10)  # Clamp between 1 and 10
-            
+            top_n = int(request.form.get('top_n', 5))
+            top_n = min(max(top_n, 1), 10)
+
             top_matches = matches[:top_n]
-            
-            # Add rank to each match
+
             for idx, match in enumerate(top_matches, 1):
                 match['rank'] = idx
-                
-                # Add database comparison fields for investigators
-                match['database_mean_similarity'] = float(mean_similarity) if len(matches) > 0 else 0.0
-                match['similarity_above_average'] = bool(match['statistical_analysis']['above_average'])
-                match['similarity_z_score'] = float(match['statistical_analysis']['z_score'])
-                
-                # Generate rank explanation for investigators
-                z_score = match['statistical_analysis']['z_score']
+                match['database_mean_similarity']  = float(mean_similarity)
+                match['similarity_above_average']  = bool(match.get('statistical_analysis', {}).get('above_average', False))
+                match['similarity_z_score']        = float(match.get('statistical_analysis', {}).get('z_score', 0.0))
+
+                z_score = match.get('statistical_analysis', {}).get('z_score', 0.0)
                 if idx == 1:
                     if z_score >= 1.5:
                         rank_explanation = f"Rank #{idx} candidate - similarity significantly above database average (top match with strong statistical confidence)"
@@ -1648,79 +1776,73 @@ def search_criminals():
                         rank_explanation = f"Rank #{idx} candidate - similarity near database average"
                     else:
                         rank_explanation = f"Rank #{idx} candidate - similarity below database average"
-                
+
                 match['rank_explanation'] = rank_explanation
-            
+
             print(f"\n[RESULTS]")
             print(f"  Total matches: {len(matches)}")
             print(f"  Returning top: {len(top_matches)}")
-            print(f"  Database mean similarity: {mean_similarity:.4f} ({mean_similarity*100:.1f}%)" if len(matches) > 0 else "  No matches")
-            print(f"  Candidates above average: {sum(1 for m in matches if m['statistical_analysis']['above_average'])}")
+            if len(matches) > 0:
+                print(f"  Database mean similarity: {mean_similarity:.4f} ({mean_similarity*100:.1f}%)")
+                print(f"  Candidates above average: {sum(1 for m in matches if m.get('statistical_analysis', {}).get('above_average', False))}")
+
+            print(f"[API] Returning response with {len(top_matches)} results", flush=True)
             
-            for match in top_matches[:5]:  # Print first 5 for brevity
-                print(f"\n  {match['rank_explanation']}")
-                print(f"    Name: {match['criminal']['full_name']}")
-                print(f"    Normalized - Hybrid: {match['similarity_score']:.1f}%, "
-                      f"Fusion: {match['embedding_fusion']:.1f}% "
-                      f"(Arc: {match['insightface_similarity']:.1f}%, Face: {match['facenet_similarity']:.1f}%), "
-                      f"Geo: {match['geometric_similarity']:.1f}%")
-                print(f"    Raw - Hybrid: {match['raw_similarity_score']:.4f}, "
-                      f"Fusion: {match['raw_embedding_fusion']:.4f} "
-                      f"(Arc: {match['raw_insightface_similarity']:.4f}, Face: {match['raw_facenet_similarity']:.4f}), "
-                      f"Geo: {match['raw_geometric_similarity']:.4f}")
-                print(f"    Z-score: {match['statistical_analysis']['z_score']:.2f}, "
-                      f"Category: {match['similarity_category']}, "
-                      f"Above avg: {match['similarity_above_average']}")
-            
-            if len(top_matches) > 5:
-                print(f"\n  ... and {len(top_matches) - 5} more")
-            
-            return jsonify({
-                "matches": top_matches,
+            response_payload = {
+                "matches":      top_matches,
                 "total_matches": len(matches),
-                "showing_top": len(top_matches),
-                "threshold_used": threshold,
+                "showing_top":  len(top_matches),
+                "threshold_used": float(threshold),
                 "distribution_analysis": distribution_stats,
                 "database_comparison": {
-                    "mean_similarity": float(mean_similarity) if len(matches) > 0 else 0.0,
-                    "std_deviation": float(std_similarity) if len(matches) > 0 else 0.0,
-                    "candidates_above_average": sum(1 for m in matches if m['statistical_analysis']['above_average']),
-                    "candidates_significantly_above_average": sum(1 for m in matches if m['statistical_analysis']['z_score'] >= 1.5),
+                    "mean_similarity":    float(mean_similarity),
+                    "std_deviation":      float(std_similarity),
+                    "candidates_above_average": sum(
+                        1 for m in matches
+                        if m.get('statistical_analysis', {}).get('above_average', False)
+                    ),
+                    "candidates_significantly_above_average": sum(
+                        1 for m in matches
+                        if m.get('statistical_analysis', {}).get('z_score', 0.0) >= 1.5
+                    ),
                     "total_candidates_searched": len(search_results),
                     "interpretation": "Candidates with z-score >= 1.5 are significantly above average and should be prioritized for investigation."
                 },
                 "two_stage_pipeline": {
-                    "stage1_method": "FAISS-accelerated fast retrieval" if use_faiss else "Linear search with cached embeddings",
+                    "stage1_method":    "FAISS-accelerated fast retrieval" if use_faiss else "Linear search with cached embeddings",
                     "stage1_candidates": len(search_results),
-                    "stage1_top_k": len(top_k_candidates),
-                    "stage2_method": "Detailed re-ranking with geometric and region similarities",
-                    "stage2_formula": "60% embedding + 25% geometric + 15% region",
+                    "stage1_top_k":     len(top_k_candidates),
+                    "stage2_method":    "Detailed re-ranking with geometric and region similarities",
+                    "stage2_formula":   "60% embedding + 25% geometric + 15% region",
                     "reranking_applied": True,
-                    "faiss_enabled": use_faiss,
-                    "faiss_available": is_faiss_index_ready()
+                    "faiss_enabled":    bool(use_faiss),
+                    "faiss_available":  bool(is_faiss_index_ready())
                 },
-                "search_method": "Two-Stage Top-K Re-Ranking with FAISS (Stage 1: FAISS Fast Retrieval | Stage 2: Detailed Re-Ranking)" if use_faiss else "Two-Stage Top-K Re-Ranking (Stage 1: Linear Search | Stage 2: Detailed Re-Ranking)",
-                "forensic_note": "Test-Time Augmentation (TTA) with 3 augmentations applied for robust embeddings. FAISS vector index used for fast similarity search. Two-stage re-ranking applied: Stage 1 selects Top-K candidates using FAISS-accelerated embedding comparison. Stage 2 performs detailed analysis with geometric and multi-region similarities. Results are re-ranked for optimal accuracy. Cross-domain sketch-to-photo matching has inherent limitations. Use as investigation leads, not absolute identification. Manual verification required." if use_faiss else "Test-Time Augmentation (TTA) with 3 augmentations applied for robust embeddings. Two-stage re-ranking applied: Stage 1 selects Top-K candidates using linear embedding comparison over cached embeddings. Stage 2 performs detailed analysis with geometric and multi-region similarities. Results are re-ranked for optimal accuracy. Cross-domain sketch-to-photo matching has inherent limitations. Use as investigation leads, not absolute identification. Manual verification required.",
+                "search_method": (
+                    "Two-Stage Top-K Re-Ranking with FAISS" if use_faiss
+                    else "Two-Stage Top-K Re-Ranking (Linear Search fallback)"
+                ),
+                "forensic_note": (
+                    "Cross-domain sketch-to-photo matching. Use as investigation leads, "
+                    "not absolute identification. Manual verification required."
+                ),
                 "interpretation_guide": {
-                    "HIGH": "Significantly above average (1.5+ std devs) - Priority investigation",
+                    "HIGH":   "Significantly above average (1.5+ std devs) - Priority investigation",
                     "MEDIUM": "Above or near average (0.5-1.5 std devs) - Worth investigating",
-                    "LOW": "Below average - Lower priority, but not excluded"
-                },
-                "usage_tips": [
-                    "Review top 5-10 candidates manually",
-                    "Compare embedding vs geometric scores for consistency",
-                    "Candidates with high z-scores are statistical outliers (better matches)",
-                    "Use explanation field to understand each match's scoring breakdown"
-                ]
-            })
-            
+                    "LOW":    "Below average - Lower priority, but not excluded"
+                }
+            }
+
+            print("[API] RESPONSE SENT SUCCESSFULLY", flush=True)
+            return jsonify(response_payload), 200
+
         finally:
             # Clean up sketch temp file
             cleanup_temp_file(sketch_path)
-                
+
     except Exception as e:
-        print("/api/criminals/search error:\n" + traceback.format_exc())
-        return jsonify({"error": str(e)}), 500
+        print(f"[API] /api/criminals/search UNHANDLED ERROR:\n{traceback.format_exc()}", flush=True)
+        return jsonify({"success": False, "error": str(e)}), 500
     finally:
         if db:
             db.close()
@@ -1733,6 +1855,16 @@ def search_criminals():
 @app.route('/api/compare', methods=['POST'])
 def compare_faces():
     """Compare two face images (sketch vs photo) - Forensic comparison"""
+    # ── Model readiness guard ─────────────────────────────────────────────
+    # Check file-based flag — visible across all Gunicorn worker processes.
+    if not _is_startup_complete():
+        print(f"[compare_faces] Startup flag missing — system not ready.", flush=True)
+        print(f"[compare_faces] MODEL_INITIALIZED = {is_models_initialized()}", flush=True)
+        print(f"[compare_faces] Flag path: {STARTUP_FLAG_PATH}", flush=True)
+        return jsonify({
+            "error": "Face recognition models are still initializing. Please retry in a moment."
+        }), 503
+
     try:
         if 'sketch' not in request.files or 'photo' not in request.files:
             return jsonify({"error": "Both 'sketch' and 'photo' files are required"}), 400
@@ -1746,7 +1878,7 @@ def compare_faces():
         try:
             # Use forensic face comparison
             result = forensic_face_comparison(sketch_path, photo_path, use_cache=True)
-            
+
             # Return the complete result with all normalized scores
             return jsonify({
                 "distance": result.get('distance', 1.0),
@@ -2255,40 +2387,27 @@ def create_case_note(case_id):
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
+    ready = _is_startup_complete()
     return jsonify({
-        "status": "healthy",
+        "status": "healthy" if ready else "initializing",
+        "startup_complete": ready,
+        "model_initialized": is_models_initialized(),
+        "faiss_ready": is_faiss_index_ready(),
+        "embedding_cache_size": get_cache_size(),
         "service": "FaceFind Forensics API v2",
         "timestamp": datetime.now(timezone.utc).isoformat()
     }), 200
 
 
 if __name__ == '__main__':
-    # Disable output buffering for immediate console output
     import sys
     sys.stdout.reconfigure(line_buffering=True)
-    
-    print("\n" + "=" * 60)
-    print("FaceFind Forensics API v2 - Hybrid Scoring System")
-    print("=" * 60)
-    print("[OK] Role-Based Authentication (Admin OTP + Officer)")
-    print("[OK] Criminal Database Management")
-    print("[OK] Face Comparison with Hybrid Scoring")
-    print("=" * 60)
-    
-    # Download models from S3 if not present locally
-    setup_models()
-    
-    # Initialize DeepFace models on startup
-    initialize_models()
-    
-    # Precompute database embeddings on startup
-    precompute_database_embeddings()
-    
+
     port = int(os.environ.get('PORT', '5001'))
     print(f"\n[OK] Server ready on http://localhost:{port}")
     print("=" * 60 + "\n")
     sys.stdout.flush()
-    
+
     # Run with debug=False to prevent Werkzeug reloader child-process deadlocks with TensorFlow/Keras
     app.run(debug=False, host='0.0.0.0', port=port, threaded=True)
 

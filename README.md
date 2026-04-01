@@ -200,7 +200,7 @@ python create_admin_auto.py
 ```
 
 Default admin credentials:
-- **Email**: admin@forensic.gov.in
+- **Email**: nickrichard292@gmail.com
 - **Password**: Admin123!
 
 **⚠️ Change these credentials after first login!**

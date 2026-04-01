@@ -199,18 +199,51 @@ def _extract_insightface_single(face_arr: np.ndarray) -> np.ndarray:
 
 
 def _extract_facenet_single(face_arr: np.ndarray) -> np.ndarray:
-    """Extract Facenet512 embedding from a single face array via DeepFace."""
+    """
+    Extract Facenet512 embedding from a single face array via DeepFace.
+    Runs DeepFace.represent() in a daemon thread with a hard 30-second timeout
+    so a hung TF session never blocks the request indefinitely.
+    """
     if not is_facenet_initialized():
         raise RuntimeError("Facenet512 model not initialized")
 
     resized = _resize_for_facenet(face_arr)
-    result = DeepFace.represent(
-        img_path=resized,
-        model_name="Facenet512",
-        enforce_detection=False,
-        align=False,
-        detector_backend="skip",
-    )
+
+    # ── Thread-based timeout wrapper ─────────────────────────────────────
+    # DeepFace.represent() can hang on TF graph execution with no built-in
+    # timeout. We run it in a daemon thread and join with a deadline.
+    _result_box = [None]   # mutable container so inner fn can write to it
+    _error_box  = [None]
+
+    def _run():
+        try:
+            print("[DEBUG] Facenet DeepFace.represent() start", flush=True)
+            out = DeepFace.represent(
+                img_path=resized,
+                model_name="Facenet512",
+                enforce_detection=False,
+                align=False,
+                detector_backend="skip",
+            )
+            print("[DEBUG] Facenet DeepFace.represent() end", flush=True)
+            _result_box[0] = out
+        except Exception as exc:
+            _error_box[0] = exc
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=30)   # 30-second hard deadline per single inference call
+
+    if t.is_alive():
+        # Thread is still blocked — TF session hung
+        raise RuntimeError(
+            "Facenet512: DeepFace.represent() timed out after 30s — TF session hung"
+        )
+
+    if _error_box[0] is not None:
+        raise _error_box[0]
+
+    result = _result_box[0]
     if not result or "embedding" not in result[0]:
         raise ValueError("Facenet512: empty/malformed result from DeepFace.represent()")
 
@@ -265,22 +298,31 @@ def extract_embedding_with_tta(processed_face: np.ndarray, model_name: str) -> n
 # Face detection + alignment (Facenet/DeepFace detector, unchanged)
 # ---------------------------------------------------------------------------
 
-def _detect_and_align_face(image_path: str) -> np.ndarray:
+def _detect_and_align_face(image_path: str, enforce_detection: bool = False) -> np.ndarray:
     """
     Detect and align the largest face using DeepFace opencv detector.
     Returns uint8 BGR aligned face array.
-    Raises ValueError if no face detected.
+    enforce_detection=False: returns full image crop if no face detected,
+    so imperfect/non-frontal photos don't crash the pipeline.
+    Raises ValueError only when enforce_detection=True and no face found.
     """
     face_objs = detection.extract_faces(
         img_path=image_path,
         detector_backend="opencv",
-        enforce_detection=True,
+        enforce_detection=enforce_detection,
         align=True,
         grayscale=False,
     )
 
     if not face_objs:
-        raise ValueError(f"No face detected in: {image_path}")
+        if enforce_detection:
+            raise ValueError(f"No face detected in: {image_path}")
+        # Fallback: read full image and use it as-is
+        print(f"    [Detect] No face detected — using full image as fallback: {image_path}")
+        img = cv2.imread(image_path)
+        if img is None:
+            raise ValueError(f"cv2.imread() failed: {image_path}")
+        return img
 
     aligned = face_objs[0]["face"]
     if aligned.dtype in (np.float32, np.float64):
@@ -422,7 +464,7 @@ def extract_dual_embeddings(
     # Step 1: Face detection + alignment
     try:
         print("  [Step 1] Detecting and aligning face...")
-        aligned_face = _detect_and_align_face(image_path)
+        aligned_face = _detect_and_align_face(image_path, enforce_detection=False)
         result["aligned_face"] = aligned_face.copy()
     except Exception as e:
         result["error"] = f"Face detection failed: {e}"
@@ -465,13 +507,15 @@ def extract_dual_embeddings(
     facenet_ok = False
     if is_facenet_initialized():
         try:
-            print("  [Step 3b] Extracting Facenet512 embedding (TTA)...")
+            print("  [Step 3b] [DEBUG] Facenet start", flush=True)
             facenet_emb = extract_embedding_with_tta(processed_face, "Facenet512")
+            print("  [Step 3b] [DEBUG] Facenet end", flush=True)
             result["facenet"] = facenet_emb
             facenet_ok = True
             print(f"    [OK] Facenet512: {len(facenet_emb)}-D, normalized")
         except Exception as e:
-            print(f"  [Step 3b] [FAIL] Facenet512 failed: {e}")
+            print(f"  [Step 3b] [FAIL] Facenet512 failed: {e}", flush=True)
+            print(f"  [Step 3b] [INFO] Continuing with InsightFace-only result", flush=True)
             traceback.print_exc()
     else:
         print("  [Step 3b] [WARN] Facenet512 not initialized - skipping")
