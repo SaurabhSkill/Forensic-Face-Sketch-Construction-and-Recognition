@@ -1361,7 +1361,7 @@ def search_criminals():
             return jsonify({"error": "Sketch file is required"}), 400
 
         sketch_file = request.files['sketch']
-        threshold = float(request.form.get('threshold', 0.4))  # Distance threshold (lower = more similar)
+        threshold = float(request.form.get('threshold', 0.2))  # Lowered for sketch matching
 
         print(f"Sketch file received: {sketch_file.filename}")
         print(f"Distance threshold: {threshold}")
@@ -1509,11 +1509,30 @@ def search_criminals():
                     finally:
                         cleanup_temp_file(criminal_photo_path)
                     
+                    # ── Embedding boost ──────────────────────────────────
+                    # Cosine similarity is now normalized to [0,1], but
+                    # embedding_fusion from FAISS Stage 1 may still be weak
+                    # (~0.5 baseline for unrelated pairs). Boost positive signal
+                    # and clamp any residual negatives before scoring.
+                    boosted_embedding = max(0.0, embedding_fusion)
+                    if boosted_embedding > 0:
+                        boosted_embedding = min(1.0, boosted_embedding * 1.5)
+
                     # Final re-ranking score: 60% embedding + 25% geometric + 15% region
-                    final_score = 0.60 * embedding_fusion + 0.25 * geometric_similarity + 0.15 * region_similarity
-                    
+                    final_score = (
+                        0.60 * boosted_embedding
+                        + 0.25 * geometric_similarity
+                        + 0.15 * region_similarity
+                    )
+
+                    # Rank boost: reward candidates where embedding is genuinely
+                    # above noise floor (>0.1 after boost means raw > ~0.067)
+                    if boosted_embedding > 0.1:
+                        final_score = min(1.0, final_score + 0.1)
+
                     print(f"  {criminal.full_name}:")
-                    print(f"    Embedding: {embedding_fusion:.4f}, Geometric: {geometric_similarity:.4f}, Region: {region_similarity:.4f}")
+                    print(f"    Raw Embedding: {embedding_fusion:.4f} → Boosted: {boosted_embedding:.4f}")
+                    print(f"    Geometric: {geometric_similarity:.4f}, Region: {region_similarity:.4f}")
                     print(f"    Final Score: {final_score:.4f}")
                     
                     # Add to matches with full scoring breakdown
@@ -1544,7 +1563,7 @@ def search_criminals():
                         "region_similarity": float(region_similarity),
                         "distance": float(1.0 - final_score),
                         "model_used": 'Two-Stage Re-Ranking (InsightFace + Facenet + Geometric + Multi-Region)',
-                        "metric_used": 'Stage 1: embedding fusion | Stage 2: 60% embedding + 25% geometric + 15% region',
+                        "metric_used": 'Stage 1: embedding fusion (80% Facenet + 20% InsightFace) | Stage 2: 60% boosted_embedding + 25% geometric + 15% region + 0.1 rank boost if embedding>0.1',
                         "is_cross_domain": True,
                         "stage1_rank": top_k_candidates.index(candidate) + 1,
                         "reranking_applied": True
