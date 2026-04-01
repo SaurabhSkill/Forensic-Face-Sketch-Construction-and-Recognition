@@ -1509,30 +1509,33 @@ def search_criminals():
                     finally:
                         cleanup_temp_file(criminal_photo_path)
                     
-                    # ── Embedding boost ──────────────────────────────────
-                    # Cosine similarity is now normalized to [0,1], but
-                    # embedding_fusion from FAISS Stage 1 may still be weak
-                    # (~0.5 baseline for unrelated pairs). Boost positive signal
-                    # and clamp any residual negatives before scoring.
-                    boosted_embedding = max(0.0, embedding_fusion)
-                    if boosted_embedding > 0:
-                        boosted_embedding = min(1.0, boosted_embedding * 1.5)
+                    # ── Embedding-first scoring ───────────────────────────
+                    # Amplify embedding signal (x2.0) and clamp to [0, 1].
+                    # Cap region score so shape-based features can't dominate.
+                    # Apply strong/weak match adjustments to widen the gap
+                    # between the correct match and false positives.
 
-                    # Final re-ranking score: 60% embedding + 25% geometric + 15% region
+                    boosted_embedding = min(1.0, max(0.0, embedding_fusion) * 2.0)
+                    capped_region     = min(region_similarity, 0.4)
+
+                    # Weighted sum: embedding dominates
                     final_score = (
-                        0.60 * boosted_embedding
-                        + 0.25 * geometric_similarity
-                        + 0.15 * region_similarity
+                        0.75 * boosted_embedding
+                        + 0.15 * geometric_similarity
+                        + 0.10 * capped_region
                     )
 
-                    # Rank boost: reward candidates where embedding is genuinely
-                    # above noise floor (>0.1 after boost means raw > ~0.067)
-                    if boosted_embedding > 0.1:
-                        final_score = min(1.0, final_score + 0.1)
+                    # Strong match boost — genuine face signal detected
+                    if boosted_embedding > 0.15:
+                        final_score = min(1.0, final_score + 0.15)
+
+                    # Weak match penalty — embedding below noise floor
+                    if boosted_embedding < 0.05:
+                        final_score *= 0.7
 
                     print(f"  {criminal.full_name}:")
                     print(f"    Raw Embedding: {embedding_fusion:.4f} -> Boosted: {boosted_embedding:.4f}")
-                    print(f"    Geometric: {geometric_similarity:.4f}, Region: {region_similarity:.4f}")
+                    print(f"    Geometric: {geometric_similarity:.4f}, Region (capped): {capped_region:.4f}")
                     print(f"    Final Score: {final_score:.4f}")
                     
                     # Add to matches with full scoring breakdown
@@ -1563,7 +1566,7 @@ def search_criminals():
                         "region_similarity": float(region_similarity),
                         "distance": float(1.0 - final_score),
                         "model_used": 'Two-Stage Re-Ranking (InsightFace + Facenet + Geometric + Multi-Region)',
-                        "metric_used": 'Stage 1: embedding fusion (80% Facenet + 20% InsightFace) | Stage 2: 60% boosted_embedding + 25% geometric + 15% region + 0.1 rank boost if embedding>0.1',
+                        "metric_used": 'Stage 1: embedding fusion (80% Facenet + 20% InsightFace) | Stage 2: 75% boosted_embedding(x2) + 15% geometric + 10% capped_region | +0.15 boost if embedding>0.15 | x0.7 penalty if embedding<0.05',
                         "is_cross_domain": True,
                         "stage1_rank": top_k_candidates.index(candidate) + 1,
                         "reranking_applied": True
