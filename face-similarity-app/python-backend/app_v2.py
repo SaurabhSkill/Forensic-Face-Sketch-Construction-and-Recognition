@@ -1510,12 +1510,10 @@ def search_criminals():
                         cleanup_temp_file(criminal_photo_path)
                     
                     # ── Embedding-first scoring ───────────────────────────
-                    # Amplify embedding signal (x2.0) and clamp to [0, 1].
-                    # Cap region score so shape-based features can't dominate.
-                    # Apply strong/weak match adjustments to widen the gap
-                    # between the correct match and false positives.
-
-                    boosted_embedding = min(1.0, max(0.0, embedding_fusion) * 2.0)
+                    # Reduce artificial boost: x1.3 (was x2.0) — maintains
+                    # correct ranking while reducing score inflation.
+                    # Cap region so shape features can't dominate.
+                    boosted_embedding = min(1.0, max(0.0, embedding_fusion) * 1.3)
                     capped_region     = min(region_similarity, 0.4)
 
                     # Weighted sum: embedding dominates
@@ -1533,9 +1531,17 @@ def search_criminals():
                     if boosted_embedding < 0.05:
                         final_score *= 0.7
 
+                    # Confidence score: embedding's share of total signal
+                    # High confidence = embedding dominates over geometric/region
+                    total_signal = boosted_embedding + geometric_similarity + capped_region
+                    embedding_confidence = (
+                        boosted_embedding / total_signal if total_signal > 0 else 0.0
+                    )
+
                     print(f"  {criminal.full_name}:")
-                    print(f"    Raw Embedding: {embedding_fusion:.4f} -> Boosted: {boosted_embedding:.4f}")
+                    print(f"    Raw Embedding: {embedding_fusion:.4f} -> Boosted(x1.3): {boosted_embedding:.4f}")
                     print(f"    Geometric: {geometric_similarity:.4f}, Region (capped): {capped_region:.4f}")
+                    print(f"    Embedding confidence: {embedding_confidence:.4f}")
                     print(f"    Final Score: {final_score:.4f}")
                     
                     # Add to matches with full scoring breakdown
@@ -1558,15 +1564,16 @@ def search_criminals():
                             "witness": criminal.witness,
                             "created_at": criminal.created_at.isoformat()
                         },
-                        "similarity_score": float(final_score),  # Final re-ranked score
+                        "similarity_score": float(final_score),
                         "embedding_fusion": float(embedding_fusion),
+                        "embedding_confidence": float(embedding_confidence),
                         "insightface_similarity": float(insightface_similarity) if insightface_similarity is not None else None,
                         "facenet_similarity": float(facenet_similarity) if facenet_similarity is not None else None,
                         "geometric_similarity": float(geometric_similarity),
                         "region_similarity": float(region_similarity),
                         "distance": float(1.0 - final_score),
                         "model_used": 'Two-Stage Re-Ranking (InsightFace + Facenet + Geometric + Multi-Region)',
-                        "metric_used": 'Stage 1: embedding fusion (80% Facenet + 20% InsightFace) | Stage 2: 75% boosted_embedding(x2) + 15% geometric + 10% capped_region | +0.15 boost if embedding>0.15 | x0.7 penalty if embedding<0.05',
+                        "metric_used": 'Stage 1: 90% Facenet + 10% InsightFace | Stage 2: 75% boosted_embedding(x1.3) + 15% geometric + 10% capped_region | +0.15 boost if embedding>0.15 | x0.7 penalty if embedding<0.05 | confidence=embedding/(embedding+geometric+region)',
                         "is_cross_domain": True,
                         "stage1_rank": top_k_candidates.index(candidate) + 1,
                         "reranking_applied": True

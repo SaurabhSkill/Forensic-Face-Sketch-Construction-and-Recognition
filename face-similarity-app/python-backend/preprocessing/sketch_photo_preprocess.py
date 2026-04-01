@@ -219,15 +219,15 @@ def preprocess_for_cross_domain_matching(image_path: str, is_sketch: bool = Fals
         print(f"    [OK] Step 1: Converted to grayscale")
         
         if is_sketch:
-            # SKETCH: Three-stage preprocessing to maximise embedding quality
-            #   1. Global histogram equalization — spreads intensity across full range
-            #   2. CLAHE — adaptive local contrast normalization
-            #   3. Gaussian blur — removes scan/compression noise without blurring lines
-            print(f"    [OK] Step 2: Sketch — histogram equalization + CLAHE + smoothing")
-            equalized  = apply_histogram_equalization(gray)
-            clahe      = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-            contrasted = clahe.apply(equalized)
-            processed  = cv2.GaussianBlur(contrasted, (3, 3), 0)
+            # SKETCH: Three-stage preprocessing
+            #   1. Grayscale (already done above)
+            #   2. Global histogram equalization — normalizes overall brightness
+            #   3. Bilateral filter — removes noise while preserving sketch edges
+            #      (better than Gaussian blur which blurs the structural lines)
+            print(f"    [OK] Step 2: Sketch — histogram equalization + bilateral filter")
+            equalized = apply_histogram_equalization(gray)
+            # d=9: neighbourhood diameter; sigmaColor/sigmaSpace=75: smoothing strength
+            processed = cv2.bilateralFilter(equalized, d=9, sigmaColor=75, sigmaSpace=75)
         else:
             # PHOTO: Apply Canny edge detection to create sketch-like representation
             edges = apply_canny_edge_detection(gray, canny_threshold[0], canny_threshold[1])
