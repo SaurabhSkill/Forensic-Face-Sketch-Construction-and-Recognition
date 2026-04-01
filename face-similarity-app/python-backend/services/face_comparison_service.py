@@ -612,17 +612,20 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
         # Fuse the scores based on available models
         print(f"\n[EMBEDDING FUSION]")
         if insightface_available and facenet_available:
-            embedding_fusion = 0.5 * insightface_similarity + 0.5 * facenet_similarity
-            print(f"  InsightFace weight: 50%, Facenet weight: 50%")
-            model_used_str = 'InsightFace + Facenet (Dual Fusion) + Multi-Region'
+            # Facenet512 is more robust for sketch-to-photo cross-domain matching.
+            # InsightFace (ArcFace) is trained on photos and struggles with sketches.
+            # Weight: 80% Facenet + 20% InsightFace
+            embedding_fusion = 0.8 * facenet_similarity + 0.2 * insightface_similarity
+            print(f"  Facenet weight: 80%, InsightFace weight: 20% (sketch-optimized)")
+            model_used_str = 'InsightFace + Facenet (Dual Fusion 80/20) + Multi-Region'
         elif insightface_available:
             embedding_fusion = insightface_similarity
-            facenet_similarity = insightface_similarity  # fallback for result dict
+            facenet_similarity = insightface_similarity
             print(f"  InsightFace only (Facenet unavailable): 100%")
             model_used_str = 'InsightFace only + Multi-Region'
         else:
             embedding_fusion = facenet_similarity
-            insightface_similarity = facenet_similarity  # fallback for result dict
+            insightface_similarity = facenet_similarity
             print(f"  Facenet only (InsightFace unavailable): 100%")
             model_used_str = 'Facenet512 only + Multi-Region'
         print(f"  Fused embedding similarity: {embedding_fusion:.6f} ({embedding_fusion*100:.2f}%)")
@@ -708,18 +711,23 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
         
         if is_cross_domain:
             # Cross-domain (sketch-to-photo) thresholds
-            # Adjusted for realistic sketch-to-photo matching (lower similarities expected)
-            if hybrid_similarity > 0.55:
+            # Calibrated for normalized cosine similarity [0, 1]:
+            #   random/noise pairs → ~0.50 (cosine≈0 maps to 0.5)
+            #   weak match        → 0.55–0.60
+            #   possible match    → 0.60–0.65
+            #   strong match      → 0.65–0.70
+            #   very strong       → >0.70
+            if hybrid_similarity > 0.70:
                 similarity_category = 'VERY_STRONG'
                 confidence_level = 'very_strong_match'
                 confidence_score = 90.0
                 match_quality = 'Very Strong Match - High priority for investigation'
-            elif hybrid_similarity > 0.45:
+            elif hybrid_similarity > 0.65:
                 similarity_category = 'STRONG'
                 confidence_level = 'strong_match'
                 confidence_score = 75.0
                 match_quality = 'Strong Match - Recommended for investigation'
-            elif hybrid_similarity > 0.35:
+            elif hybrid_similarity > 0.58:
                 similarity_category = 'POSSIBLE'
                 confidence_level = 'possible_match'
                 confidence_score = 55.0
@@ -731,12 +739,12 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
                 match_quality = 'Low Similarity - Unlikely match'
         else:
             # Same-domain (photo-to-photo) thresholds
-            if hybrid_similarity > 0.70:
+            if hybrid_similarity > 0.80:
                 similarity_category = 'HIGH'
                 confidence_level = 'high_similarity'
                 confidence_score = 95.0
                 match_quality = 'High Similarity - Strong match'
-            elif hybrid_similarity >= 0.60:
+            elif hybrid_similarity >= 0.70:
                 similarity_category = 'MEDIUM'
                 confidence_level = 'medium_similarity'
                 confidence_score = 80.0
@@ -830,11 +838,11 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
             'is_cross_domain': bool(is_cross_domain),
             'comparison_type': comparison_type,
             'model_used': model_used_str,
-            'metric_used': 'hybrid: 85% final_embedding + 15% geometric | final_embedding: 70% fusion + 30% multi-region | fusion: 50% InsightFace + 50% Facenet | multi-region: 55% full + 20% eyes + 15% nose + 10% mouth',
+            'metric_used': 'hybrid: 85% final_embedding + 15% geometric | final_embedding: 70% fusion + 30% multi-region | fusion: 80% Facenet + 20% InsightFace | multi-region: 55% full + 20% eyes + 15% nose + 10% mouth',
             'scoring_formula': {
                 'final_similarity': '0.85 * final_embedding + 0.15 * geometric',
                 'final_embedding': '0.7 * embedding_fusion + 0.3 * multi_region',
-                'embedding_fusion': '0.5 * insightface + 0.5 * facenet',
+                'embedding_fusion': '0.8 * facenet + 0.2 * insightface',
                 'multi_region': '0.55 * full_face + 0.20 * eyes + 0.15 * nose + 0.10 * mouth',
                 'effective_weights': {
                     'embedding_fusion': '59.5%',

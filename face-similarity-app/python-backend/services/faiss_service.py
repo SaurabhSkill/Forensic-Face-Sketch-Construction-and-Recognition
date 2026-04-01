@@ -261,7 +261,8 @@ def search_faiss_index(
                 "criminal_id":            cid,
                 "insightface_similarity": s["insightface"],
                 "facenet_similarity":     s["facenet"],
-                "embedding_fusion":       0.5 * s["insightface"] + 0.5 * s["facenet"],
+                # Facenet is more robust for sketch-to-photo; InsightFace supplements
+                "embedding_fusion":       0.2 * s["insightface"] + 0.8 * s["facenet"],
             }
             for cid, s in candidate_scores.items()
         ]
@@ -303,7 +304,8 @@ def linear_search_embeddings(
         try:
             ins_sim  = cosine_similarity(query_insightface, cached["insightface"])
             face_sim = cosine_similarity(query_facenet,     cached["facenet"])
-            fusion   = 0.5 * ins_sim + 0.5 * face_sim
+            # Facenet is more robust for sketch-to-photo; InsightFace supplements
+            fusion   = 0.2 * ins_sim + 0.8 * face_sim
             candidates.append({
                 "criminal_id":            cid,
                 "insightface_similarity": ins_sim,
