@@ -3,6 +3,10 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
+# Suppress TensorFlow verbose logs and disable oneDNN (prevents extra graph recompilation)
+ENV TF_CPP_MIN_LOG_LEVEL=2
+ENV TF_ENABLE_ONEDNN_OPTS=0
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     libgl1 \

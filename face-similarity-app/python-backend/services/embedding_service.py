@@ -123,7 +123,46 @@ def _init_facenet_safe() -> bool:
         print("[Facenet512] Starting initialization...")
         ok = initialize_facenet_model()
         print(f"[Facenet512] {'[OK] Initialized' if ok else '[FAIL] Initialization returned False'}")
-        return ok
+        if not ok:
+            return False
+
+        # ── Warmup call — compiles TF graph NOW, not on first request ────
+        # In Docker, the first DeepFace.represent() call triggers TF graph
+        # compilation which takes 60-120s. Running it here at startup means
+        # requests never hit that delay. Timeout=180s for the warmup only.
+        print("[Facenet512] Running warmup inference to compile TF graph...")
+        try:
+            dummy = np.zeros((160, 160, 3), dtype=np.uint8)
+            _result_box = [None]
+            _error_box  = [None]
+
+            def _warmup():
+                try:
+                    from deepface import DeepFace as _DF
+                    _result_box[0] = _DF.represent(
+                        img_path=dummy,
+                        model_name="Facenet512",
+                        enforce_detection=False,
+                        align=False,
+                        detector_backend="skip",
+                    )
+                except Exception as exc:
+                    _error_box[0] = exc
+
+            wt = threading.Thread(target=_warmup, daemon=True)
+            wt.start()
+            wt.join(timeout=180)  # 3 min max for first-ever TF graph compile
+
+            if wt.is_alive():
+                print("[Facenet512] [WARN] Warmup timed out after 180s — TF graph compile is very slow")
+            elif _error_box[0]:
+                print(f"[Facenet512] [WARN] Warmup error (non-fatal): {_error_box[0]}")
+            else:
+                print("[Facenet512] [OK] Warmup complete — TF graph compiled and ready")
+        except Exception as warmup_err:
+            print(f"[Facenet512] [WARN] Warmup failed (non-fatal): {warmup_err}")
+
+        return True
     except Exception as e:
         print(f"[Facenet512] [FAIL] Exception during init: {e}")
         traceback.print_exc()
@@ -198,21 +237,20 @@ def _extract_insightface_single(face_arr: np.ndarray) -> np.ndarray:
     return normalize_insightface(emb)
 
 
-def _extract_facenet_single(face_arr: np.ndarray) -> np.ndarray:
+def _extract_facenet_single(face_arr: np.ndarray, timeout: int = 120) -> np.ndarray:
     """
     Extract Facenet512 embedding from a single face array via DeepFace.
-    Runs DeepFace.represent() in a daemon thread with a hard 30-second timeout
-    so a hung TF session never blocks the request indefinitely.
+    Runs DeepFace.represent() in a daemon thread with a hard timeout.
+
+    timeout=120s — TensorFlow initializes its compute graph on the FIRST call
+    inside a Docker container, which can take 60-120s. Subsequent calls are fast.
     """
     if not is_facenet_initialized():
         raise RuntimeError("Facenet512 model not initialized")
 
     resized = _resize_for_facenet(face_arr)
 
-    # ── Thread-based timeout wrapper ─────────────────────────────────────
-    # DeepFace.represent() can hang on TF graph execution with no built-in
-    # timeout. We run it in a daemon thread and join with a deadline.
-    _result_box = [None]   # mutable container so inner fn can write to it
+    _result_box = [None]
     _error_box  = [None]
 
     def _run():
@@ -232,12 +270,13 @@ def _extract_facenet_single(face_arr: np.ndarray) -> np.ndarray:
 
     t = threading.Thread(target=_run, daemon=True)
     t.start()
-    t.join(timeout=30)   # 30-second hard deadline per single inference call
+    t.join(timeout=timeout)
 
     if t.is_alive():
-        # Thread is still blocked — TF session hung
         raise RuntimeError(
-            "Facenet512: DeepFace.represent() timed out after 30s — TF session hung"
+            f"Facenet512: DeepFace.represent() timed out after {timeout}s — "
+            "TF graph initialization is slow in Docker on first call. "
+            "Subsequent calls will be faster."
         )
 
     if _error_box[0] is not None:
@@ -265,6 +304,7 @@ def extract_embedding_with_tta(processed_face: np.ndarray, model_name: str) -> n
     """
     augmented_faces = generate_tta_augmentations(processed_face)
     embeddings = []
+    timed_out = False   # track if any TTA call timed out
 
     for idx, aug_face in enumerate(augmented_faces):
         try:
@@ -277,6 +317,15 @@ def extract_embedding_with_tta(processed_face: np.ndarray, model_name: str) -> n
 
             embeddings.append(emb)
             print(f"    [TTA] {model_name} aug {idx}: [OK] ({len(emb)}-D)")
+            timed_out = False  # successful call — TF session is alive
+        except RuntimeError as e:
+            err_str = str(e)
+            print(f"    [TTA] {model_name} aug {idx}: [WARN] skipped - {err_str}")
+            if "timed out" in err_str:
+                timed_out = True
+                # TF session is hung — no point running remaining augmentations
+                print(f"    [TTA] {model_name}: timeout detected, skipping remaining augmentations")
+                break
         except Exception as e:
             print(f"    [TTA] {model_name} aug {idx}: [WARN] skipped - {e}")
 
@@ -287,7 +336,15 @@ def extract_embedding_with_tta(processed_face: np.ndarray, model_name: str) -> n
         print(f"    [TTA] {model_name}: averaged {len(embeddings)} augmentation(s)")
         return avg
 
-    # All TTA failed — plain extraction as last resort
+    # If TF timed out, do NOT retry — it will timeout again immediately
+    if timed_out:
+        raise RuntimeError(
+            f"{model_name}: all TTA calls timed out — TF graph initialization "
+            "is slow on first Docker run. Retrying will also timeout. "
+            "Using InsightFace-only result."
+        )
+
+    # Non-timeout failure — try plain extraction once as last resort
     print(f"    [TTA] {model_name}: all augmentations failed, trying plain extraction...")
     if model_name == "InsightFace":
         return _extract_insightface_single(processed_face)
