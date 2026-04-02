@@ -1,0 +1,59 @@
+# ============================================================
+# Python Backend — .dockerignore
+# ============================================================
+
+# Python cache & compiled files
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Environment secrets (injected at runtime via docker-compose env_file)
+.env
+
+# Temp / runtime files
+temp_uploads/
+startup_complete.flag
+*.tmp
+*.log
+
+# ML model weights (downloaded from S3 at build time via preload_models.py)
+*.onnx
+*.h5
+*.pt
+*.pth
+*.bin
+
+# Test files
+tests/
+pytest.ini
+.coverage
+htmlcov/
+
+# Dev / utility scripts (not needed in container)
+start-backend.js
+get_arcface_weights.py
+upload_arcface_weights.py
+create_admin_auto.py
+check_admin.py
+fix_admin_login.py
+
+# Git
+.git/
+.gitignore
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Docs
+README.md
