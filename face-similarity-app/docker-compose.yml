@@ -5,6 +5,15 @@ services:
     build:
       context: ./python-backend
       dockerfile: Dockerfile
+      # Pass S3 credentials as build args so models are baked into the image.
+      # Remove args block if you prefer runtime-only downloads.
+      args:
+        AWS_ACCESS_KEY_ID:     ${AWS_ACCESS_KEY_ID:-}
+        AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+        AWS_REGION:            ${AWS_REGION:-us-east-1}
+        MODEL_S3_BUCKET:       ${MODEL_S3_BUCKET:-}
+        FACENET_S3_KEY:        ${FACENET_S3_KEY:-facenet512_weights.h5}
+        INSIGHTFACE_S3_KEY:    ${INSIGHTFACE_S3_KEY:-w600k_r50.onnx}
     container_name: facefind-backend
     ports:
       - "5001:5001"
@@ -13,6 +22,13 @@ services:
     restart: always
     networks:
       - facefind-network
+    # ── Model cache volumes ──────────────────────────────────────────────────
+    # Mount named volumes so models persist across container rebuilds.
+    # On first run the volumes are populated from the image layers.
+    # On subsequent runs the volumes are reused — no re-download needed.
+    volumes:
+      - deepface_weights:/root/.deepface/weights
+      - insightface_models:/root/.insightface/models
 
   frontend:
     build:
@@ -30,3 +46,10 @@ services:
 networks:
   facefind-network:
     driver: bridge
+
+# ── Named volumes for model persistence ─────────────────────────────────────
+# deepface_weights  : /root/.deepface/weights  (Facenet512 .h5 file)
+# insightface_models: /root/.insightface/models (buffalo_l ONNX files)
+volumes:
+  deepface_weights:
+  insightface_models:
