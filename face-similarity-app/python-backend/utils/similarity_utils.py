@@ -6,26 +6,26 @@ import numpy as np
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     """
-    Compute cosine similarity between two vectors, normalized to [0, 1].
+    Compute raw cosine similarity between two L2-normalized vectors.
 
-    Raw cosine similarity is in [-1, 1]. For face embeddings, InsightFace
-    (ArcFace) embeddings can produce negative cosine values for non-matching
-    pairs, which causes fusion scores to be near zero or negative.
+    Formula: sim = dot(a, b) / (||a|| * ||b||)
 
-    We map to [0, 1] using: normalized = (cosine + 1) / 2
-      - cosine = -1  → 0.0  (completely opposite)
-      - cosine =  0  → 0.5  (orthogonal / unrelated)
-      - cosine = +1  → 1.0  (identical)
+    For L2-normalized embeddings (InsightFace ArcFace), this returns
+    values in [-1, 1]:
+      - sim =  1.0  → identical vectors (same person)
+      - sim =  0.0  → orthogonal (unrelated)
+      - sim = -1.0  → opposite (very different)
 
-    This ensures InsightFace scores are always positive and meaningful
-    when fused with Facenet scores.
+    Expected ranges for face recognition:
+      - Same person:      0.5 – 0.8
+      - Different person: 0.0 – 0.4
 
     Args:
         a: First embedding vector
         b: Second embedding vector
 
     Returns:
-        float: Normalized cosine similarity in range [0, 1]
+        float: Raw cosine similarity in range [-1, 1]
     """
     norm_a = np.linalg.norm(a)
     norm_b = np.linalg.norm(b)
@@ -33,7 +33,9 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     if norm_a == 0 or norm_b == 0:
         return 0.0
 
-    raw = float(np.dot(a, b) / (norm_a * norm_b))
+    # Ensure L2 normalized before dot product
+    a_norm = a / norm_a
+    b_norm = b / norm_b
 
-    # Normalize from [-1, 1] to [0, 1]
-    return (raw + 1.0) / 2.0
+    sim = float(np.dot(a_norm, b_norm))
+    return sim

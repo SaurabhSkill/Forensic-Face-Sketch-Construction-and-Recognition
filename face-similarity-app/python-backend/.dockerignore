@@ -16,7 +16,7 @@ venv/
 env/
 
 # Environment secrets (injected at runtime via docker-compose env_file)
-.env
+
 
 # Temp / runtime files
 temp_uploads/

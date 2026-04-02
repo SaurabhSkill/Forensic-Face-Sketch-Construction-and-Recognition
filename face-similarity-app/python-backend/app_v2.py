@@ -14,7 +14,6 @@ import time
 import uuid
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
-from deepface import DeepFace
 from database import User, OTP, Criminal, get_db, create_tables
 from auth_v2 import (
     hash_password,
@@ -115,6 +114,7 @@ create_tables()
 # ============================================================================
 
 from services.embedding_service import MODEL_INITIALIZED, is_models_initialized
+from services.embedding_service import warmup_models
 from services.faiss_service import (
     get_embedding_cache,
     get_embedding_version,
@@ -168,16 +168,16 @@ def precompute_database_embeddings():
                     criminal.face_embedding
                     and isinstance(criminal.face_embedding, dict)
                     and 'insightface' in criminal.face_embedding
-                    and 'facenet'     in criminal.face_embedding
                     and criminal.embedding_version == EMBEDDING_VERSION
                 ):
-                    set_cached_embedding(
-                        criminal.criminal_id,
-                        np.array(criminal.face_embedding['insightface']),
-                        np.array(criminal.face_embedding['facenet'])
-                    )
+                    ins_emb  = np.array(criminal.face_embedding['insightface'])
+                    face_emb = np.array(criminal.face_embedding['facenet']) \
+                               if 'facenet' in criminal.face_embedding \
+                               and criminal.face_embedding['facenet'] is not None \
+                               else None
+                    set_cached_embedding(criminal.criminal_id, ins_emb, face_emb)
                     cached_count += 1
-                    print(f"  [OK] Loaded from DB: {criminal.criminal_id}")
+                    print(f"  [CACHE LOAD] {criminal.criminal_id} — loaded from DB into memory cache")
                     continue
 
                 # ── Slow path: compute embeddings from S3 photo ───────────
@@ -245,7 +245,7 @@ def precompute_database_embeddings():
                     # ── Persist to DB (critical — survives restarts) ──────
                     criminal.face_embedding = {
                         'insightface': insightface_emb.tolist(),
-                        'facenet':     facenet_emb.tolist()
+                        'facenet':     facenet_emb.tolist() if facenet_emb is not None else None,
                     }
                     criminal.embedding_version = EMBEDDING_VERSION
                     db.commit()
@@ -254,7 +254,7 @@ def precompute_database_embeddings():
                     set_cached_embedding(criminal.criminal_id, insightface_emb, facenet_emb)
 
                     updated_count += 1
-                    print(f"  [OK] Computed + persisted embeddings for {criminal.criminal_id}")
+                    print(f"  [CACHE LOAD] {criminal.criminal_id} — computed + persisted + loaded into memory cache")
 
                 finally:
                     cleanup_temp_file(temp_path)
@@ -270,10 +270,10 @@ def precompute_database_embeddings():
                 continue
 
         print(f"\n[SUMMARY]")
-        print(f"  Loaded from DB cache : {cached_count}")
-        print(f"  Newly computed       : {updated_count}")
-        print(f"  Failed               : {failed_count}")
-        print(f"  Total in memory cache: {get_cache_size()}")
+        print(f"  [CACHE LOAD] Loaded from DB cache : {cached_count}")
+        print(f"  [CACHE LOAD] Newly computed       : {updated_count}")
+        print(f"  Failed                            : {failed_count}")
+        print(f"  Total in memory cache             : {get_cache_size()}")
         print("="*60 + "\n")
 
         # Build FAISS index after all embeddings are in cache
@@ -339,8 +339,16 @@ def _run_startup():
         print(f"[STARTUP] [ERROR] initialize_models() failed: {e}")
         traceback.print_exc()
 
-    # Step 3: Precompute embeddings for all criminals in DB + build FAISS index
-    print("[STARTUP] Step 3: Precomputing database embeddings + building FAISS index...")
+    # Step 3: Warmup both models — compiles TF/ONNX graphs before first request
+    print("[STARTUP] Step 3: Warming up models (preloading inference graphs)...")
+    try:
+        warmup_models()
+    except Exception as e:
+        print(f"[STARTUP] [ERROR] warmup_models() failed: {e}")
+        traceback.print_exc()
+
+    # Step 4: Precompute embeddings for all criminals in DB + build FAISS index
+    print("[STARTUP] Step 4: Precomputing database embeddings + building FAISS index...")
     print(f"[DEBUG] precompute_database_embeddings available: {callable(precompute_database_embeddings)}")
     try:
         precompute_database_embeddings()
@@ -421,26 +429,14 @@ def compare_with_edge_preprocessing(sketch_path: str, photo_path: str) -> dict:
         processed_img2 = preprocess_for_edge_based_matching(photo_path, is_sketch=is_img2_sketch)
         
         # Run ArcFace on preprocessed images
-        print("  [STEP 2] Running ArcFace on edge-preprocessed images...")
-        result = DeepFace.verify(
-            img1_path=processed_img1,
-            img2_path=processed_img2,
-            model_name='ArcFace',
-            distance_metric='cosine',
-            enforce_detection=False,
-            align=True
-        )
-        
-        distance = float(result['distance'])
-        similarity = max(0.0, 1.0 - distance)
-        
+        print("  [STEP 2] DeepFace removed — test endpoint disabled")
         return {
-            'success': True,
-            'distance': distance,
-            'similarity': similarity,
-            'threshold': float(result['threshold']),
-            'model_verified': bool(result['verified']),
-            'error': None
+            'success': False,
+            'distance': 1.0,
+            'similarity': 0.0,
+            'threshold': 0.4,
+            'model_verified': False,
+            'error': 'DeepFace has been removed. Use /api/compare instead.'
         }
         
     except Exception as e:
@@ -1178,7 +1174,7 @@ def add_criminal():
                             insightface_embedding=insightface_emb,
                             facenet_embedding=facenet_emb
                         )
-                        print(f"  [OK] Embeddings cached in memory for: {new_criminal.criminal_id}")
+                        print(f"  [CACHE LOAD] {new_criminal.criminal_id} — new criminal loaded into memory cache")
 
                         # ── Rebuild FAISS index ───────────────────────────
                         print(f"  [FAISS] Rebuilding index to include new criminal...")
@@ -1424,127 +1420,113 @@ def search_criminals():
             )
             
             # Convert search results to stage1_candidates format
-            criminal_dict = {c.criminal_id: c for c in criminals}  # Quick lookup
+            # Recompute fusion score using SAME formula as Stage 2:
+            # final = 0.6 * insightface + 0.4 * facenet
+            # This ensures Stage 1 ranking is consistent with Stage 2.
+            criminal_dict = {c.criminal_id: c for c in criminals}
             top_k_candidates = []
-            
+
+            q_ins_n  = query_insightface / (np.linalg.norm(query_insightface) + 1e-10) \
+                       if query_insightface is not None else None
+            q_face_n = query_embeddings['facenet'] / (np.linalg.norm(query_embeddings['facenet']) + 1e-10) \
+                       if query_embeddings.get('facenet') is not None else None
+
             for result in search_results:
                 criminal_id = result['criminal_id']
-                if criminal_id in criminal_dict:
-                    top_k_candidates.append({
-                        'criminal': criminal_dict[criminal_id],
-                        'embedding_fusion': result['embedding_fusion'],
-                        'insightface_similarity': result['insightface_similarity'],
-                        'facenet_similarity': result['facenet_similarity']
-                    })
+                if criminal_id not in criminal_dict:
+                    continue
+
+                cached = get_cached_embedding(criminal_id)
+                if cached is not None and cached.get("insightface") is not None and q_ins_n is not None:
+                    # Recompute InsightFace similarity from cache
+                    c_ins_n = cached["insightface"] / (np.linalg.norm(cached["insightface"]) + 1e-10)
+                    sim_ins = float(np.dot(q_ins_n, c_ins_n))
+
+                    # Recompute Facenet similarity from cache if available
+                    c_face = cached.get("facenet")
+                    if q_face_n is not None and c_face is not None:
+                        c_face_n = c_face / (np.linalg.norm(c_face) + 1e-10)
+                        sim_face = float(np.dot(q_face_n, c_face_n))
+                        fused = 0.6 * sim_ins + 0.4 * sim_face
+                    else:
+                        sim_face = None
+                        fused = sim_ins
+                else:
+                    # Fallback to FAISS score if cache miss
+                    sim_ins  = result['insightface_similarity']
+                    sim_face = result['facenet_similarity']
+                    fused    = result['embedding_fusion']
+
+                top_k_candidates.append({
+                    'criminal':              criminal_dict[criminal_id],
+                    'embedding_fusion':      fused,
+                    'insightface_similarity': sim_ins,
+                    'facenet_similarity':    sim_face,
+                })
+
+            # Sort Stage 1 candidates by the fused score (same formula as Stage 2)
+            top_k_candidates.sort(key=lambda x: x['embedding_fusion'], reverse=True)
+            print(f"\n[STAGE 1 FUSED RANKING]")
+            for i, c in enumerate(top_k_candidates, 1):
+                print(f"  {i}. {c['criminal'].criminal_id}: fused={c['embedding_fusion']:.6f} "
+                      f"(ins={c['insightface_similarity']:.4f}, "
+                      f"face={c['facenet_similarity'] if c['facenet_similarity'] is not None else 'N/A'})")
             
             # ================================================================
-            # STAGE 2: RE-RANKING - Detailed Comparison
+            # STAGE 2: RE-RANKING — uses cached embeddings, NO S3 download,
+            # NO TTA recomputation. Query embedding computed once above.
             # ================================================================
             print(f"\n[STAGE 2: RE-RANKING]")
-            print(f"  Performing detailed comparison on Top-{len(top_k_candidates)} candidates...")
-            
+            print(f"  Re-ranking Top-{len(top_k_candidates)} candidates using cached embeddings...")
+
             matches = []
-            
+
             for candidate in top_k_candidates:
                 try:
-                    criminal = candidate['criminal']
-                    embedding_fusion = candidate['embedding_fusion']
-                    insightface_similarity = candidate['insightface_similarity']
-                    facenet_similarity = candidate['facenet_similarity']
-                    
-                    # Download criminal photo to temp file via S3 signed URL
-                    import urllib.request as _urlreq
-                    criminal_photo_path = generate_temp_filepath(
-                        original_filename=criminal.photo_filename or 'criminal.jpg', prefix='crim'
-                    )
-                    _signed = get_signed_url(criminal.photo_key)
-                    if not _signed:
-                        print(f"    [WARNING] Could not get signed URL for {criminal.full_name}, skipping")
-                        continue
-                    _urlreq.urlretrieve(_signed, criminal_photo_path)
-                    
-                    try:
-                        # Extract aligned face from criminal photo
-                        from deepface.modules import detection
-                        
-                        criminal_face_objs = detection.extract_faces(
-                            img_path=criminal_photo_path,
-                            detector_backend='opencv',
-                            enforce_detection=False,
-                            align=True,
-                            grayscale=False
-                        )
-                        
-                        if criminal_face_objs and len(criminal_face_objs) > 0:
-                            criminal_aligned_face = criminal_face_objs[0]['face']
-                            
-                            # Convert to uint8 if needed
-                            if criminal_aligned_face.dtype == np.float32 or criminal_aligned_face.dtype == np.float64:
-                                criminal_aligned_face = (criminal_aligned_face * 255).astype(np.uint8)
-                            
-                            # Compute geometric similarity using aligned faces
-                            geometric_similarity = compute_geometric_similarity_from_aligned(
-                                query_embeddings['aligned_face'],
-                                criminal_aligned_face
-                            )
-                            
-                            # Compute multi-region similarity for enhanced matching
-                            try:
-                                query_regions = extract_region_embeddings(query_embeddings['aligned_face'], is_sketch=True)
-                                criminal_regions = extract_region_embeddings(criminal_aligned_face, is_sketch=False)
-                                
-                                if query_regions['success'] and criminal_regions['success']:
-                                    region_results = compute_multi_region_similarity(query_regions, criminal_regions)
-                                    region_similarity = region_results['combined_similarity']
-                                else:
-                                    region_similarity = embedding_fusion  # Fallback to combined embedding
-                            except Exception as e:
-                                print(f"    [WARNING] Region similarity failed for {criminal.full_name}: {e}")
-                                region_similarity = embedding_fusion  # Fallback to combined embedding
+                    criminal          = candidate['criminal']
+                    embedding_fusion  = candidate['embedding_fusion']
+                    insightface_sim   = candidate['insightface_similarity']
+                    facenet_sim       = candidate['facenet_similarity']
+
+                    # ── CACHE HIT: compute fusion from both cached embeddings ──
+                    cached = get_cached_embedding(criminal.criminal_id)
+                    if cached is not None and cached.get("insightface") is not None:
+                        print(f"  [CACHE HIT] {criminal.criminal_id} — using stored embeddings")
+
+                        q_ins  = query_embeddings['insightface']
+                        q_face = query_embeddings['facenet']
+
+                        # InsightFace similarity
+                        c_ins = cached["insightface"]
+                        q_ins_n = q_ins  / (np.linalg.norm(q_ins)  + 1e-10)
+                        c_ins_n = c_ins  / (np.linalg.norm(c_ins)  + 1e-10)
+                        sim_insight = float(np.dot(q_ins_n, c_ins_n))
+
+                        # Facenet similarity (if available in both query and cache)
+                        c_face = cached.get("facenet")
+                        if q_face is not None and c_face is not None:
+                            q_face_n = q_face / (np.linalg.norm(q_face) + 1e-10)
+                            c_face_n = c_face / (np.linalg.norm(c_face) + 1e-10)
+                            sim_facenet = float(np.dot(q_face_n, c_face_n))
+                            final_score = 0.6 * sim_insight + 0.4 * sim_facenet
                         else:
-                            # Fallback if face detection fails
-                            geometric_similarity = embedding_fusion  # Fallback to combined embedding
-                            region_similarity = embedding_fusion  # Fallback to combined embedding
-                            
-                    finally:
-                        cleanup_temp_file(criminal_photo_path)
-                    
-                    # ── Embedding-first scoring ───────────────────────────
-                    # Reduce artificial boost: x1.3 (was x2.0) — maintains
-                    # correct ranking while reducing score inflation.
-                    # Cap region so shape features can't dominate.
-                    boosted_embedding = min(1.0, max(0.0, embedding_fusion) * 1.3)
-                    capped_region     = min(region_similarity, 0.4)
+                            sim_facenet = None
+                            final_score = sim_insight  # InsightFace only
 
-                    # Weighted sum: embedding dominates
-                    final_score = (
-                        0.75 * boosted_embedding
-                        + 0.15 * geometric_similarity
-                        + 0.10 * capped_region
-                    )
+                        insightface_sim  = sim_insight
+                        facenet_sim      = sim_facenet
+                        embedding_fusion = final_score
 
-                    # Strong match boost — genuine face signal detected
-                    if boosted_embedding > 0.15:
-                        final_score = min(1.0, final_score + 0.15)
+                        print(f"  [DEBUG] Insight: {sim_insight:.6f}, Facenet: {sim_facenet if sim_facenet is not None else 'N/A'}, Final: {final_score:.6f}")
+                    else:
+                        print(f"  [WARN] {criminal.criminal_id} — no cached embedding, using Stage 1 score")
+                        final_score = embedding_fusion
 
-                    # Weak match penalty — embedding below noise floor
-                    if boosted_embedding < 0.05:
-                        final_score *= 0.7
-
-                    # Confidence score: embedding's share of total signal
-                    # High confidence = embedding dominates over geometric/region
-                    total_signal = boosted_embedding + geometric_similarity + capped_region
-                    embedding_confidence = (
-                        boosted_embedding / total_signal if total_signal > 0 else 0.0
-                    )
+                    embedding_confidence = 1.0
 
                     print(f"  {criminal.full_name}:")
-                    print(f"    Raw Embedding: {embedding_fusion:.4f} -> Boosted(x1.3): {boosted_embedding:.4f}")
-                    print(f"    Geometric: {geometric_similarity:.4f}, Region (capped): {capped_region:.4f}")
-                    print(f"    Embedding confidence: {embedding_confidence:.4f}")
-                    print(f"    Final Score: {final_score:.4f}")
-                    
-                    # Add to matches with full scoring breakdown
+                    print(f"    Final Score: {final_score:.6f}")
+
                     matches.append({
                         "criminal": {
                             "id": criminal.id,
@@ -1564,21 +1546,22 @@ def search_criminals():
                             "witness": criminal.witness,
                             "created_at": criminal.created_at.isoformat()
                         },
-                        "similarity_score": float(final_score),
-                        "embedding_fusion": float(embedding_fusion),
-                        "embedding_confidence": float(embedding_confidence),
-                        "insightface_similarity": float(insightface_similarity) if insightface_similarity is not None else None,
-                        "facenet_similarity": float(facenet_similarity) if facenet_similarity is not None else None,
-                        "geometric_similarity": float(geometric_similarity),
-                        "region_similarity": float(region_similarity),
-                        "distance": float(1.0 - final_score),
-                        "model_used": 'Two-Stage Re-Ranking (InsightFace + Facenet + Geometric + Multi-Region)',
-                        "metric_used": 'Stage 1: 90% Facenet + 10% InsightFace | Stage 2: 75% boosted_embedding(x1.3) + 15% geometric + 10% capped_region | +0.15 boost if embedding>0.15 | x0.7 penalty if embedding<0.05 | confidence=embedding/(embedding+geometric+region)',
-                        "is_cross_domain": True,
-                        "stage1_rank": top_k_candidates.index(candidate) + 1,
-                        "reranking_applied": True
+                        "similarity_score":      float(final_score),
+                        "embedding_fusion":      float(embedding_fusion),
+                        "embedding_confidence":  float(embedding_confidence),
+                        "insightface_similarity": float(insightface_sim) if insightface_sim is not None else None,
+                        "facenet_similarity":    float(facenet_sim) if facenet_sim is not None else None,
+                        "geometric_similarity":  float(geometric_similarity),
+                        "region_similarity":     float(region_similarity),
+                        "distance":              float(1.0 - final_score),
+                        "model_used":            "InsightFace + Facenet (weighted fusion)",
+                        "metric_used":           "final_score = 0.6 * cosine(insight_q, insight_db) + 0.4 * cosine(facenet_q, facenet_db)",
+                        "is_cross_domain":       True,
+                        "stage1_rank":           top_k_candidates.index(candidate) + 1,
+                        "reranking_applied":     True,
+                        "cache_hit":             cached is not None,
                     })
-                        
+
                 except Exception as e:
                     print(f"  [ERROR] Error re-ranking criminal {candidate['criminal'].id}: {e}")
                     traceback.print_exc()
@@ -1605,7 +1588,7 @@ def search_criminals():
             distribution_stats = {}
 
             def _safe_float(v):
-                """Convert any numeric value (including np types) to Python float. None → 0.0."""
+                """Convert any numeric value (including np types) to Python float. None -> 0.0."""
                 if v is None:
                     return 0.0
                 try:
@@ -1614,9 +1597,19 @@ def search_criminals():
                     return 0.0
 
             def normalize_for_display(raw_score):
-                """Convert raw similarity to display percentage. Safe against None."""
+                """
+                Convert raw cosine similarity [-1, 1] to display percentage [5, 95].
+                Calibrated for InsightFace ArcFace:
+                  raw = -1.0  -> display =  5%
+                  raw =  0.0  -> display = 30%
+                  raw =  0.4  -> display = 50%
+                  raw =  0.6  -> display = 65%
+                  raw =  0.8  -> display = 80%
+                  raw =  1.0  -> display = 95%
+                """
                 v = _safe_float(raw_score)
-                return min(95.0, max(5.0, (v - 0.2) * 150.0))
+                # Map [-1, 1] -> [5, 95]: display = 5 + (v + 1) / 2 * 90
+                return min(95.0, max(5.0, 5.0 + (v + 1.0) / 2.0 * 90.0))
 
             if len(matches) > 0:
                 similarities     = [m['similarity_score'] for m in matches]

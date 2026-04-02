@@ -1,0 +1,8 @@
+fastapi==0.103.2
+uvicorn[standard]==0.23.2
+deepface==0.0.93
+tensorflow-cpu==2.13.0
+keras==2.13.1
+numpy>=1.24,<2.0
+opencv-python-headless==4.10.0.84
+typing-extensions==4.5.0

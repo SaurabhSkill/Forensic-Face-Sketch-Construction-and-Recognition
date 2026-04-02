@@ -46,8 +46,8 @@ RUN mkdir -p temp_uploads
 
 ARG AWS_ACCESS_KEY_ID=""
 ARG AWS_SECRET_ACCESS_KEY=""
-ARG AWS_REGION="us-east-1"
-ARG MODEL_S3_BUCKET=""
+ARG AWS_REGION="ap-south-1"
+ARG MODEL_S3_BUCKET="forensic-models"
 ARG FACENET_S3_KEY="facenet512_weights.h5"
 ARG INSIGHTFACE_S3_KEY="w600k_r50.onnx"
 
