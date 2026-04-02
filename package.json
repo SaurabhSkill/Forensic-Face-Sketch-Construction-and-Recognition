@@ -4,9 +4,10 @@
   "version": "1.0.0",
   "workspaces": [],
   "scripts": {
-    "dev": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev": "concurrently \"npm:dev:backend\" \"npm:dev:frontend\" \"npm:dev:facenet\"",
     "dev:backend": "cd face-similarity-app/python-backend && node start-backend.js",
-    "dev:frontend": "cd face-similarity-app/frontend && npm start"
+    "dev:frontend": "cd face-similarity-app/frontend && npm start",
+    "dev:facenet": "cd face-similarity-app/facenet_service && python main.py"
   },
   "dependencies": {
     "dotenv": "^16.4.5"
