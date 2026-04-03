@@ -90,20 +90,14 @@ def extract_facial_regions(aligned_face: np.ndarray) -> dict:
         }
 
 
-def extract_region_embeddings(aligned_face: np.ndarray, is_sketch: bool = False) -> dict:
+def extract_region_embeddings(aligned_face: np.ndarray, is_sketch: bool = False, use_tta: bool = True) -> dict:
     """
     Extract ArcFace embeddings from multiple facial regions for enhanced matching.
-    Uses Test-Time Augmentation (TTA) for robust embedding extraction.
-    
-    Extracts embeddings from:
-    - Full face
-    - Eyes region
-    - Nose region
-    - Mouth region
     
     Args:
         aligned_face: Aligned face image (numpy array)
         is_sketch: True if image is a sketch, False if photo
+        use_tta: If True, apply TTA per region. Set False for database images to save time.
     
     Returns:
         dict: {
@@ -151,11 +145,15 @@ def extract_region_embeddings(aligned_face: np.ndarray, is_sketch: bool = False)
                         gray = region_img
                     processed_region = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
                 
-                # Extract embedding with TTA (same as main pipeline)
-                embedding = extract_embedding_with_tta(
-                    processed_region, 
-                    'InsightFace'
-                )
+                # Extract embedding with or without TTA
+                if use_tta:
+                    embedding = extract_embedding_with_tta(
+                        processed_region, 
+                        'InsightFace'
+                    )
+                else:
+                    from services.embedding_service import _extract_insightface_single
+                    embedding = _extract_insightface_single(processed_region)
                 
                 region_embeddings[region_name] = embedding
                     
@@ -495,9 +493,9 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
         # Extract DUAL embeddings (InsightFace + Facenet) using align-then-edge approach
         print(f"[DUAL EMBEDDING EXTRACTION] Extracting dual embeddings (InsightFace + Facenet)...")
         
-        # Extract dual embeddings for image 1 (query) - no adaptive Canny yet
-        print(f"\n  Extracting dual embeddings 1 (query)...")
-        embeddings1 = extract_dual_embeddings(sketch_path, is_sketch=is_img1_sketch, use_adaptive_canny=False)
+        # Extract dual embeddings for image 1 (query) - TTA enabled for robustness
+        print(f"\n  Extracting dual embeddings 1 (query, TTA enabled)...")
+        embeddings1 = extract_dual_embeddings(sketch_path, is_sketch=is_img1_sketch, use_adaptive_canny=False, use_tta=True)
         
         if embeddings1 is None or not embeddings1['success']:
             return {
@@ -521,9 +519,8 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
                 'forensic_note': 'Dual embedding extraction failed for image 1.'
             }
         
-        # Extract dual embeddings for image 2 (reference)
-        # Use adaptive Canny if it's a photo and we're doing cross-domain comparison
-        print(f"\n  Extracting dual embeddings 2 (reference)...")
+        # Extract dual embeddings for image 2 (reference) - no TTA for speed
+        print(f"\n  Extracting dual embeddings 2 (reference, no TTA)...")
         use_adaptive = is_cross_domain and not is_img2_sketch  # Only for photos in cross-domain
         insightface_available = embeddings1.get('insightface') is not None
         reference_emb = embeddings1['insightface'] if (use_adaptive and insightface_available) else None
@@ -532,7 +529,8 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
             photo_path, 
             is_sketch=is_img2_sketch,
             use_adaptive_canny=use_adaptive,
-            reference_embedding=reference_emb
+            reference_embedding=reference_emb,
+            use_tta=False,  # No TTA for reference/database images — use cached embeddings
         )
         
         if embeddings2 is None or not embeddings2['success']:
@@ -612,12 +610,15 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
         # Fuse the scores based on available models
         print(f"\n[EMBEDDING FUSION]")
         if insightface_available and facenet_available:
-            # Facenet512 is more robust for sketch-to-photo cross-domain matching.
-            # InsightFace (ArcFace) is trained on photos and struggles with sketches.
-            # Weight: 90% Facenet + 10% InsightFace
-            embedding_fusion = 0.9 * facenet_similarity + 0.1 * insightface_similarity
-            print(f"  Facenet weight: 90%, InsightFace weight: 10% (sketch-optimized)")
-            model_used_str = 'InsightFace + Facenet (Dual Fusion 90/10) + Multi-Region'
+            # Clamp Facenet to max 0.75 to prevent it from dominating cross-domain results
+            facenet_clamped = min(facenet_similarity, 0.75)
+            if facenet_clamped != facenet_similarity:
+                print(f"  Facenet clamped: {facenet_similarity:.4f} -> {facenet_clamped:.4f}")
+                facenet_similarity = facenet_clamped
+            # Weight: 60% Facenet + 40% InsightFace (balanced, prevents Facenet inflation)
+            embedding_fusion = 0.6 * facenet_similarity + 0.4 * insightface_similarity
+            print(f"  Facenet weight: 60%, InsightFace weight: 40% (balanced fusion)")
+            model_used_str = 'InsightFace + Facenet (Dual Fusion 60/40) + Multi-Region'
         elif insightface_available:
             embedding_fusion = insightface_similarity
             facenet_similarity = insightface_similarity
@@ -639,8 +640,8 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
         else:
             print(f"  Extracting region embeddings for enhanced matching...")
             try:
-                regions1 = extract_region_embeddings(embeddings1['aligned_face'], is_sketch=is_img1_sketch)
-                regions2 = extract_region_embeddings(embeddings2['aligned_face'], is_sketch=is_img2_sketch)
+                regions1 = extract_region_embeddings(embeddings1['aligned_face'], is_sketch=is_img1_sketch, use_tta=True)
+                regions2 = extract_region_embeddings(embeddings2['aligned_face'], is_sketch=is_img2_sketch, use_tta=False)
 
                 if regions1['success'] and regions2['success']:
                     region_results = compute_multi_region_similarity(regions1, regions2)
@@ -683,25 +684,29 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
         print(f"    Embedding fusion: {embedding_fusion:.6f} ({embedding_fusion*100:.2f}%)")
         print(f"    Multi-region similarity: {multi_region_similarity:.6f} ({multi_region_similarity*100:.2f}%)")
         
+        print(f"\n  Step 2: Combine embedding fusion, multi-region, and geometric similarity")
+        print(f"    Embedding fusion: {embedding_fusion:.6f} ({embedding_fusion*100:.2f}%)")
+        print(f"    Multi-region similarity: {multi_region_similarity:.6f} ({multi_region_similarity*100:.2f}%)")
+        
+        # Kept for result_dict reporting only
         final_embedding = 0.7 * embedding_fusion + 0.3 * multi_region_similarity
-        print(f"    Final embedding = 0.7 * embedding_fusion + 0.3 * multi_region")
-        print(f"    Final embedding: {final_embedding:.6f} ({final_embedding*100:.2f}%)")
         
         print(f"\n  Step 2: Combine final embedding with geometric similarity")
         print(f"    Final embedding: {final_embedding:.6f} ({final_embedding*100:.2f}%)")
         print(f"    Geometric similarity: {geometric_similarity:.6f} ({geometric_similarity*100:.2f}%)")
         
-        hybrid_similarity = 0.85 * final_embedding + 0.15 * geometric_similarity
+        # Final formula: 50% embedding_fusion + 30% multi_region + 20% geometric
+        hybrid_similarity = 0.5 * embedding_fusion + 0.3 * multi_region_similarity + 0.2 * geometric_similarity
         hybrid_distance = 1.0 - hybrid_similarity
         
-        print(f"    Final similarity = 0.85 * final_embedding + 0.15 * geometric")
+        print(f"    Final similarity = 0.5 * embedding_fusion + 0.3 * multi_region + 0.2 * geometric")
         print(f"    Final hybrid similarity: {hybrid_similarity:.6f} ({hybrid_similarity*100:.2f}%)")
         print(f"    Final hybrid distance: {hybrid_distance:.6f}")
         
         print(f"\n  [SCORING BREAKDOWN]")
-        print(f"    Embedding fusion weight in final: 70% * 85% = 59.5%")
-        print(f"    Multi-region weight in final: 30% * 85% = 25.5%")
-        print(f"    Geometric weight in final: 15%")
+        print(f"    Embedding fusion weight: 50%")
+        print(f"    Multi-region weight: 30%")
+        print(f"    Geometric weight: 20%")
         print(f"    Total: 100%")
         
         # Determine similarity category based on hybrid similarity
@@ -711,23 +716,19 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
         
         if is_cross_domain:
             # Cross-domain (sketch-to-photo) thresholds
-            # Calibrated for normalized cosine similarity [0, 1]:
-            #   random/noise pairs → ~0.50 (cosine≈0 maps to 0.5)
-            #   weak match        → 0.55–0.60
-            #   possible match    → 0.60–0.65
-            #   strong match      → 0.65–0.70
-            #   very strong       → >0.70
-            if hybrid_similarity > 0.70:
+            # Calibrated for new formula: 0.5*fusion + 0.3*multi_region + 0.2*geometric
+            # Facenet clamped at 0.75, so realistic range is ~0.30–0.65
+            if hybrid_similarity > 0.60:
                 similarity_category = 'VERY_STRONG'
                 confidence_level = 'very_strong_match'
                 confidence_score = 90.0
                 match_quality = 'Very Strong Match - High priority for investigation'
-            elif hybrid_similarity > 0.65:
+            elif hybrid_similarity > 0.52:
                 similarity_category = 'STRONG'
                 confidence_level = 'strong_match'
                 confidence_score = 75.0
                 match_quality = 'Strong Match - Recommended for investigation'
-            elif hybrid_similarity > 0.58:
+            elif hybrid_similarity > 0.42:
                 similarity_category = 'POSSIBLE'
                 confidence_level = 'possible_match'
                 confidence_score = 55.0
@@ -776,43 +777,19 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
         # ================================================================
         # SCORE NORMALIZATION FOR UI PRESENTATION
         # ================================================================
-        # Apply presentation-level normalization to make scores more interpretable
-        # for sketch-to-photo matching where raw cosine similarities are typically low
-        #
-        # Formula: display_similarity = min(95, max(5, (raw - 0.2) * 150))
-        #
-        # This transformation accounts for the fact that sketch-to-photo cosine
-        # similarities rarely exceed 0.8, and baseline noise sits around 0.2:
-        #   raw=0.20 → display=5%   (noise floor)
-        #   raw=0.40 → display=30%  (low match)
-        #   raw=0.55 → display=52%  (medium match)
-        #   raw=0.65 → display=67%  (good match)
-        #   raw=0.75 → display=82%  (strong match)
-        #   raw=0.83 → display=95%  (cap)
-        #
-        # raw_similarity  → backend ranking and forensic logic (unchanged)
-        # display_similarity → frontend UI only
-
-        print(f"[SCORE NORMALIZATION FOR UI]")
+        # display_score = raw * 100 — no inflation formula
+        print(f"\n[SCORE OUTPUT]")
         print(f"  Raw similarity: {hybrid_similarity:.4f}")
-        print(f"  Transformation: display = min(95, max(5, (raw - 0.2) * 150))")
+        print(f"  Display score: {hybrid_similarity * 100:.1f}% (raw * 100, no normalization)")
 
-        def normalize_for_display(raw_score):
-            """Convert raw similarity to display percentage. Safe against None."""
-            v = raw_score if raw_score is not None else 0.0
-            return min(95.0, max(5.0, (float(v) - 0.2) * 150.0))
-
-        # Apply display normalization to all similarity scores
-        display_hybrid           = normalize_for_display(hybrid_similarity)
-        display_final_embedding  = normalize_for_display(final_embedding)
-        display_fusion           = normalize_for_display(embedding_fusion)
-        display_insightface      = normalize_for_display(insightface_similarity)
-        display_facenet          = normalize_for_display(facenet_similarity)
-        display_geometric        = normalize_for_display(geometric_similarity)
-        display_multi_region     = normalize_for_display(multi_region_similarity)
-        
-        print(f"  Display similarity: {display_hybrid:.1f}%")
-        print(f"  Note: Raw scores preserved for ranking, display scores for UI only")
+        # display_score = raw * 100 — no inflation formula
+        display_hybrid          = round(hybrid_similarity * 100, 2)
+        display_final_embedding = round(final_embedding * 100, 2)
+        display_fusion          = round(embedding_fusion * 100, 2)
+        display_insightface     = round(insightface_similarity * 100, 2)
+        display_facenet         = round(facenet_similarity * 100, 2)
+        display_geometric       = round(geometric_similarity * 100, 2)
+        display_multi_region    = round(multi_region_similarity * 100, 2)
         
         result_dict = {
             'distance': float(hybrid_distance),
@@ -838,35 +815,34 @@ def forensic_face_comparison(sketch_path: str, photo_path: str, use_cache: bool 
             'is_cross_domain': bool(is_cross_domain),
             'comparison_type': comparison_type,
             'model_used': model_used_str,
-            'metric_used': 'hybrid: 85% final_embedding + 15% geometric | final_embedding: 70% fusion + 30% multi-region | fusion: 80% Facenet + 20% InsightFace | multi-region: 55% full + 20% eyes + 15% nose + 10% mouth',
+            'metric_used': 'hybrid: 0.5*fusion + 0.3*multi_region + 0.2*geometric | fusion: 0.6*Facenet(clamped@0.75) + 0.4*InsightFace | multi-region: 0.55*full + 0.20*eyes + 0.15*nose + 0.10*mouth',
             'scoring_formula': {
-                'final_similarity': '0.85 * final_embedding + 0.15 * geometric',
-                'final_embedding': '0.7 * embedding_fusion + 0.3 * multi_region',
-                'embedding_fusion': '0.9 * facenet + 0.1 * insightface',
+                'final_similarity': '0.5 * embedding_fusion + 0.3 * multi_region + 0.2 * geometric',
+                'embedding_fusion': '0.6 * facenet(max=0.75) + 0.4 * insightface',
                 'multi_region': '0.55 * full_face + 0.20 * eyes + 0.15 * nose + 0.10 * mouth',
                 'effective_weights': {
-                    'embedding_fusion': '59.5%',
-                    'multi_region': '25.5%',
-                    'geometric': '15.0%'
+                    'embedding_fusion': '50%',
+                    'multi_region': '30%',
+                    'geometric': '20%'
                 }
             },
             'insightface_embedding_length': int(len(embeddings1['insightface'])) if insightface_available else 0,
             'facenet_embedding_length': int(len(embeddings1['facenet'])) if facenet_available else 0,
             'embeddings_normalized': True,
-            'score_normalization': 'Presentation-level normalization: display = min(95, max(5, (raw - 0.2) * 150)). Use raw_similarity for ranking, display_similarity for UI visualization.',
+            'score_normalization': 'No normalization applied. display_similarity = raw_similarity * 100.',
             'processing_time': round(elapsed_time, 3),
             'from_cache': False,
             'preprocessing_method': 'align-then-edge (face detected on original, edge applied to aligned face)',
-            'forensic_note': 'Test-Time Augmentation (TTA) with 3 augmentations applied for robust embeddings. Final scoring: 59.5% embedding fusion + 25.5% multi-region + 15% geometric. Dual embedding fusion: 50% InsightFace + 50% Facenet. Multi-region embeddings: 55% full face + 20% eyes + 15% nose + 10% mouth. All embeddings L2 normalized. Investigation assistant - not identity confirmation.' if is_cross_domain else 'Test-Time Augmentation (TTA) with 3 augmentations applied. Final scoring with multi-region enhancement for higher reliability. All embeddings L2 normalized.'
+            'forensic_note': 'TTA applied to query image only. Final scoring: 50% embedding fusion + 30% multi-region + 20% geometric. Dual embedding fusion: 60% Facenet(clamped@0.75) + 40% InsightFace. Multi-region: 55% full face + 20% eyes + 15% nose + 10% mouth. All embeddings L2 normalized. Investigation assistant - not identity confirmation.' if is_cross_domain else 'TTA applied to query image only. Final scoring with multi-region enhancement. All embeddings L2 normalized.'
         }
         
         # Add region-specific details if available
         if region_results is not None:
             result_dict['region_details'] = {
-                'full_face': float(normalize_for_display(region_results['full_face_similarity'])) if region_results['full_face_similarity'] is not None else None,
-                'eyes': float(normalize_for_display(region_results['eyes_similarity'])) if region_results['eyes_similarity'] is not None else None,
-                'nose': float(normalize_for_display(region_results['nose_similarity'])) if region_results['nose_similarity'] is not None else None,
-                'mouth': float(normalize_for_display(region_results['mouth_similarity'])) if region_results['mouth_similarity'] is not None else None,
+                'full_face': float(region_results['full_face_similarity'] * 100) if region_results['full_face_similarity'] is not None else None,
+                'eyes': float(region_results['eyes_similarity'] * 100) if region_results['eyes_similarity'] is not None else None,
+                'nose': float(region_results['nose_similarity'] * 100) if region_results['nose_similarity'] is not None else None,
+                'mouth': float(region_results['mouth_similarity'] * 100) if region_results['mouth_similarity'] is not None else None,
                 'regions_used': region_results['regions_used'],
                 'raw_full_face': float(region_results['full_face_similarity']) if region_results['full_face_similarity'] is not None else None,
                 'raw_eyes': float(region_results['eyes_similarity']) if region_results['eyes_similarity'] is not None else None,

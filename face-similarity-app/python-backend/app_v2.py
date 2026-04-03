@@ -1389,47 +1389,61 @@ def search_criminals():
             criminals = db.query(Criminal).all()
             
             # ================================================================
-            # STAGE 1: FAST RETRIEVAL - FAISS-based Embedding Similarity
+            # STAGE 1: FAST RETRIEVAL - Dual FAISS (InsightFace + Facenet)
             # ================================================================
             print(f"\n[STAGE 1: FAST RETRIEVAL]")
-            
-            # Select Top-K candidates for re-ranking (default K=10, max 50 for FAISS)
+
+            # Detect if query is a sketch for adaptive weighting
+            from preprocessing.sketch_photo_preprocess import is_sketch_image
+            is_sketch_query = is_sketch_image(sketch_path)
+            print(f"  Query type: {'SKETCH' if is_sketch_query else 'PHOTO'}")
+
+            # Adaptive fusion weights (same used in Stage 1 and Stage 2)
+            if is_sketch_query:
+                W_FACE = 0.9
+                W_INS  = 0.1
+            else:
+                W_FACE = 0.5
+                W_INS  = 0.5
+            print(f"  Fusion weights: InsightFace={W_INS:.2f}, Facenet={W_FACE:.2f}")
+
             top_k = int(request.form.get('top_k', 10))
-            top_k = min(max(top_k, 1), 50)  # Clamp between 1 and 50
-            
-            # Get all criminal IDs from database
+            top_k = min(max(top_k, 1), 50)
+
             criminal_ids = [c.criminal_id for c in criminals]
-            
-            # Use FAISS service for search (automatically falls back to linear search if FAISS not available)
-            # Use whichever embedding is available; FAISS service handles None gracefully
+
             query_insightface = query_embeddings['insightface']
-            query_facenet = query_embeddings['facenet']
-            # If one model is missing, mirror the other so fusion still works
+            query_facenet     = query_embeddings.get('facenet')
+
+            # Mirror missing model so fusion still works
             if query_insightface is None and query_facenet is not None:
                 query_insightface = query_facenet
-                print("  [WARN] InsightFace unavailable - using Facenet embedding for FAISS insightface slot")
+                print("  [WARN] InsightFace unavailable - mirroring Facenet")
             elif query_facenet is None and query_insightface is not None:
                 query_facenet = query_insightface
-                print("  [WARN] Facenet unavailable - using InsightFace embedding for FAISS facenet slot")
+                print("  [WARN] Facenet unavailable - mirroring InsightFace")
 
             search_results, use_faiss = search_top_k_candidates(
                 query_insightface,
                 query_facenet,
                 criminal_ids,
-                top_k
+                top_k,
+                is_sketch=is_sketch_query,
             )
-            
-            # Convert search results to stage1_candidates format
-            # Recompute fusion score using SAME formula as Stage 2:
-            # final = 0.6 * insightface + 0.4 * facenet
-            # This ensures Stage 1 ranking is consistent with Stage 2.
-            criminal_dict = {c.criminal_id: c for c in criminals}
-            top_k_candidates = []
 
+            # ── Calibration helper (mirrors faiss_service) ──────────────────
+            def _cal(sim):
+                """Raw cosine [-1,1] -> calibrated [0,1]."""
+                return (float(sim) + 1.0) / 2.0
+
+            # Normalize query vectors once
             q_ins_n  = query_insightface / (np.linalg.norm(query_insightface) + 1e-10) \
                        if query_insightface is not None else None
-            q_face_n = query_embeddings['facenet'] / (np.linalg.norm(query_embeddings['facenet']) + 1e-10) \
-                       if query_embeddings.get('facenet') is not None else None
+            q_face_n = query_facenet / (np.linalg.norm(query_facenet) + 1e-10) \
+                       if query_facenet is not None else None
+
+            criminal_dict   = {c.criminal_id: c for c in criminals}
+            top_k_candidates = []
 
             for result in search_results:
                 criminal_id = result['criminal_id']
@@ -1437,40 +1451,38 @@ def search_criminals():
                     continue
 
                 cached = get_cached_embedding(criminal_id)
-                if cached is not None and cached.get("insightface") is not None and q_ins_n is not None:
-                    # Recompute InsightFace similarity from cache
-                    c_ins_n = cached["insightface"] / (np.linalg.norm(cached["insightface"]) + 1e-10)
-                    sim_ins = float(np.dot(q_ins_n, c_ins_n))
+                if cached is not None:
+                    # Recompute calibrated scores from cache for consistency
+                    s_ins = 0.5
+                    if cached.get("insightface") is not None and q_ins_n is not None:
+                        c_ins_n = cached["insightface"] / (np.linalg.norm(cached["insightface"]) + 1e-10)
+                        s_ins   = _cal(float(np.dot(q_ins_n, c_ins_n)))
 
-                    # Recompute Facenet similarity from cache if available
-                    c_face = cached.get("facenet")
-                    if q_face_n is not None and c_face is not None:
-                        c_face_n = c_face / (np.linalg.norm(c_face) + 1e-10)
-                        sim_face = float(np.dot(q_face_n, c_face_n))
-                        fused = max(sim_ins, sim_face)
-                    else:
-                        sim_face = None
-                        fused = sim_ins
+                    s_face = 0.5
+                    if cached.get("facenet") is not None and q_face_n is not None:
+                        c_face_n = cached["facenet"] / (np.linalg.norm(cached["facenet"]) + 1e-10)
+                        s_face   = min(_cal(float(np.dot(q_face_n, c_face_n))), 0.875)  # clamp
+
+                    fused = W_INS * s_ins + W_FACE * s_face
                 else:
-                    # Fallback to FAISS score if cache miss
-                    sim_ins  = result['insightface_similarity']
-                    sim_face = result['facenet_similarity']
-                    fused    = result['embedding_fusion']
+                    # Cache miss — use FAISS scores directly
+                    s_ins  = result['insightface_similarity']
+                    s_face = result['facenet_similarity']
+                    fused  = result['embedding_fusion']
 
                 top_k_candidates.append({
-                    'criminal':              criminal_dict[criminal_id],
-                    'embedding_fusion':      fused,
-                    'insightface_similarity': sim_ins,
-                    'facenet_similarity':    sim_face,
+                    'criminal':               criminal_dict[criminal_id],
+                    'embedding_fusion':       fused,
+                    'insightface_similarity': s_ins,
+                    'facenet_similarity':     s_face,
                 })
 
-            # Sort Stage 1 candidates by the fused score (same formula as Stage 2)
             top_k_candidates.sort(key=lambda x: x['embedding_fusion'], reverse=True)
             print(f"\n[STAGE 1 FUSED RANKING]")
             for i, c in enumerate(top_k_candidates, 1):
+                face_str = f"{c['facenet_similarity']:.4f}" if c['facenet_similarity'] is not None else "N/A"
                 print(f"  {i}. {c['criminal'].criminal_id}: fused={c['embedding_fusion']:.6f} "
-                      f"(ins={c['insightface_similarity']:.4f}, "
-                      f"face={c['facenet_similarity'] if c['facenet_similarity'] is not None else 'N/A'})")
+                      f"(ins={c['insightface_similarity']:.4f}, face={face_str})")
             
             # ================================================================
             # STAGE 2: RE-RANKING — uses cached embeddings, NO S3 download,
@@ -1488,43 +1500,46 @@ def search_criminals():
                     insightface_sim   = candidate['insightface_similarity']
                     facenet_sim       = candidate['facenet_similarity']
 
-                    # ── CACHE HIT: compute fusion from both cached embeddings ──
+                    # ── CACHE HIT: calibrated fusion with adaptive weights ──────
+                    # Same W_INS / W_FACE as Stage 1 for consistent ranking.
+                    # Facenet calibrated score clamped to 0.875 (raw 0.75 -> cal 0.875).
                     cached = get_cached_embedding(criminal.criminal_id)
                     if cached is not None and cached.get("insightface") is not None:
                         print(f"  [CACHE HIT] {criminal.criminal_id} — using stored embeddings")
 
                         q_ins  = query_embeddings['insightface']
-                        q_face = query_embeddings['facenet']
+                        q_face = query_embeddings.get('facenet')
 
-                        # InsightFace similarity
-                        c_ins = cached["insightface"]
-                        q_ins_n = q_ins  / (np.linalg.norm(q_ins)  + 1e-10)
-                        c_ins_n = c_ins  / (np.linalg.norm(c_ins)  + 1e-10)
-                        sim_insight = float(np.dot(q_ins_n, c_ins_n))
+                        c_ins   = cached["insightface"]
+                        q_ins_n2 = q_ins / (np.linalg.norm(q_ins) + 1e-10)
+                        c_ins_n2 = c_ins / (np.linalg.norm(c_ins) + 1e-10)
+                        raw_ins     = float(np.dot(q_ins_n2, c_ins_n2))
+                        sim_insight = _cal(raw_ins)
 
-                        # Facenet similarity (if available in both query and cache)
                         c_face = cached.get("facenet")
                         if q_face is not None and c_face is not None:
-                            q_face_n = q_face / (np.linalg.norm(q_face) + 1e-10)
-                            c_face_n = c_face / (np.linalg.norm(c_face) + 1e-10)
-                            sim_facenet = float(np.dot(q_face_n, c_face_n))
-                            final_score = max(sim_insight, sim_facenet)
+                            q_face_n2   = q_face / (np.linalg.norm(q_face) + 1e-10)
+                            c_face_n2   = c_face / (np.linalg.norm(c_face) + 1e-10)
+                            raw_face    = float(np.dot(q_face_n2, c_face_n2))
+                            sim_facenet = min(_cal(raw_face), 0.875)  # clamp
+                            embedding_fusion = W_INS * sim_insight + W_FACE * sim_facenet
                         else:
-                            sim_facenet = None
-                            final_score = sim_insight  # InsightFace only
+                            sim_facenet      = None
+                            embedding_fusion = sim_insight
 
-                        insightface_sim  = sim_insight
-                        facenet_sim      = sim_facenet
-                        embedding_fusion = final_score
+                        insightface_sim = sim_insight
+                        facenet_sim     = sim_facenet
+                        final_score     = embedding_fusion
 
-                        print(f"  [DEBUG] Insight: {sim_insight:.6f}, Facenet: {sim_facenet if sim_facenet is not None else 'N/A'}, Final: {final_score:.6f}")
+                        face_dbg = f"{sim_facenet:.6f}" if sim_facenet is not None else "N/A"
+                        print(f"  [DEBUG] Insight(cal): {sim_insight:.6f}, "
+                              f"Facenet(cal): {face_dbg}, "
+                              f"Final: {final_score:.6f}")
                     else:
                         print(f"  [WARN] {criminal.criminal_id} — no cached embedding, using Stage 1 score")
                         final_score = embedding_fusion
 
                     embedding_confidence = 1.0
-                    geometric_similarity = 0.0
-                    region_similarity = 0.0
 
                     print(f"  {criminal.full_name}:")
                     print(f"    Final Score: {final_score:.6f}")
@@ -1548,20 +1563,19 @@ def search_criminals():
                             "witness": criminal.witness,
                             "created_at": criminal.created_at.isoformat()
                         },
-                        "similarity_score":      float(final_score),
-                        "embedding_fusion":      float(embedding_fusion),
-                        "embedding_confidence":  float(embedding_confidence),
+                        "similarity_score":       float(final_score),
+                        "embedding_fusion":       float(embedding_fusion),
+                        "embedding_confidence":   float(embedding_confidence),
                         "insightface_similarity": float(insightface_sim) if insightface_sim is not None else None,
-                        "facenet_similarity":    float(facenet_sim) if facenet_sim is not None else None,
-                        "geometric_similarity":  float(geometric_similarity),
-                        "region_similarity":     float(region_similarity),
-                        "distance":              float(1.0 - final_score),
-                        "model_used":            "InsightFace + Facenet (max fusion)",
-                        "metric_used":           "final_score = max(cosine(insight_q, insight_db), cosine(facenet_q, facenet_db))",
-                        "is_cross_domain":       True,
-                        "stage1_rank":           top_k_candidates.index(candidate) + 1,
-                        "reranking_applied":     True,
-                        "cache_hit":             cached is not None,
+                        "facenet_similarity":     float(facenet_sim) if facenet_sim is not None else None,
+                        "geometric_similarity":   0.0,  # not computed in fast re-ranking path
+                        "distance":               float(1.0 - final_score),
+                        "model_used":             f"InsightFace + Facenet (adaptive {'sketch' if is_sketch_query else 'photo'} weights {W_INS:.2f}/{W_FACE:.2f}, calibrated)",
+                        "metric_used":            f"final = {W_INS:.2f}*cal(cosine(insight)) + {W_FACE:.2f}*min(cal(cosine(facenet)), 0.875)",
+                        "is_cross_domain":        True,
+                        "stage1_rank":            top_k_candidates.index(candidate) + 1,
+                        "reranking_applied":      True,
+                        "cache_hit":              cached is not None,
                     })
 
                 except Exception as e:
@@ -1600,18 +1614,12 @@ def search_criminals():
 
             def normalize_for_display(raw_score):
                 """
-                Convert raw cosine similarity [-1, 1] to display percentage [5, 95].
-                Calibrated for InsightFace ArcFace:
-                  raw = -1.0  -> display =  5%
-                  raw =  0.0  -> display = 30%
-                  raw =  0.4  -> display = 50%
-                  raw =  0.6  -> display = 65%
-                  raw =  0.8  -> display = 80%
-                  raw =  1.0  -> display = 95%
+                Convert raw cosine similarity to display percentage.
+                display = raw * 100  (no inflation, no offset)
+                Expected: same person 50-80%, different person 0-40%
                 """
                 v = _safe_float(raw_score)
-                # Map [-1, 1] -> [5, 95]: display = 5 + (v + 1) / 2 * 90
-                return min(95.0, max(5.0, 5.0 + (v + 1.0) / 2.0 * 90.0))
+                return min(100.0, max(0.0, v * 100.0))
 
             if len(matches) > 0:
                 similarities     = [m['similarity_score'] for m in matches]
@@ -1665,15 +1673,14 @@ def search_criminals():
                         "percentile":          float((matches.index(match) + 1) / len(matches) * 100)
                     }
 
-                    # Absolute threshold classification — independent of
-                    # database size or distribution, so a single-criminal DB
-                    # doesn't inflate every result to HIGH.
-                    if raw_similarity > 0.4:
+                    # Absolute threshold classification — calibrated for new scoring formula
+                    # (0.5*fusion + 0.3*multi_region + 0.2*geometric, Facenet clamped@0.75)
+                    if raw_similarity > 0.55:
                         match['similarity_category'] = 'HIGH'
                         match['confidence_level']    = 'high_similarity'
                         match['confidence_score']    = 85.0
                         match['match_quality']       = 'High similarity - Strong candidate for investigation'
-                    elif raw_similarity > 0.25:
+                    elif raw_similarity > 0.40:
                         match['similarity_category'] = 'MEDIUM'
                         match['confidence_level']    = 'medium_similarity'
                         match['confidence_score']    = 60.0
@@ -1709,9 +1716,7 @@ def search_criminals():
                         match['raw_region_similarity'] = float(raw_region)
 
                     match['score_normalization'] = (
-                        'Presentation-level normalization applied: '
-                        'display = min(95, max(5, (raw - 0.2) * 150)). '
-                        'Use raw_similarity_score for ranking.'
+                        'No normalization applied. display_similarity = raw_similarity * 100.'
                     )
 
                     match['explanation'] = {

@@ -426,9 +426,14 @@ def extract_dual_embeddings(
     is_sketch: bool = False,
     use_adaptive_canny: bool = False,
     reference_embedding: np.ndarray = None,
+    use_tta: bool = True,
 ) -> dict:
     """
     Extract InsightFace embedding from an image.
+
+    Args:
+        use_tta: If True, apply TTA (3 augmentations averaged). Set False for
+                 database/reference images to speed up processing.
 
     Returns dict with keys:
         success, insightface, facenet (always None), aligned_face,
@@ -494,11 +499,16 @@ def extract_dual_embeddings(
         print(f"[EmbeddingService] [FAIL] {result['error']}")
         return result
 
-    # Step 3: InsightFace embedding (with TTA)
+    # Step 3: InsightFace embedding (with optional TTA)
     try:
-        print("  [Step 3] Extracting InsightFace embedding (TTA)...")
-        insightface_emb = extract_embedding_with_tta(processed_face, "InsightFace")
+        if use_tta:
+            print("  [Step 3] Extracting InsightFace embedding (TTA)...")
+            insightface_emb = extract_embedding_with_tta(processed_face, "InsightFace")
+        else:
+            print("  [Step 3] Extracting InsightFace embedding (no TTA, cached/reference)...")
+            insightface_emb = _extract_insightface_single(processed_face)
         result["insightface"] = insightface_emb
+        result["tta_applied"] = use_tta
         print(f"    [OK] InsightFace: {len(insightface_emb)}-D, normalized")
     except Exception as e:
         result["error"] = f"InsightFace embedding extraction failed: {e}"

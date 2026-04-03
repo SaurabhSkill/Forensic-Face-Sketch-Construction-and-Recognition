@@ -49,14 +49,7 @@ const ForensicReport = ({ similarityScore, photoFile }) => {
     if (value === undefined || value === null) return null;
     const num = typeof value === 'string' ? parseFloat(value) : value;
     if (isNaN(num)) return null;
-    
-    // If the value is between 0 and 1, it's likely a raw similarity score
-    // Convert to percentage for display
-    if (num > 0 && num <= 1) {
-      return num * 100;
-    }
-    
-    // If it's already a percentage (1-100), use it directly
+    // Backend sends display values already as percentages (0-100)
     return num;
   };
 
