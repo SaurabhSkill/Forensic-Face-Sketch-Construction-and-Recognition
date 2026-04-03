@@ -16,6 +16,7 @@ from typing import Generator
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import NullPool
 
 from db_models import Base  # noqa: F401
 from db_models import Case, CaseNote, Criminal, EvidenceItem, OTP, User  # noqa: F401 — re-exported
@@ -32,13 +33,10 @@ DATABASE_URL: str = os.environ["DATABASE_URL"]  # hard-fail fast if not set
 # Engine — PostgreSQL only
 # ---------------------------------------------------------------------------
 
+# Disabling SQLAlchemy client-side pooling since Supabase PgBouncer (port 6543) handles it.
 engine = create_engine(
     DATABASE_URL,
-    pool_size=10,
-    max_overflow=20,
-    pool_timeout=30,
-    pool_recycle=1800,
-    pool_pre_ping=True,
+    poolclass=NullPool,
     future=True,
 )
 

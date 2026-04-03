@@ -1447,7 +1447,7 @@ def search_criminals():
                     if q_face_n is not None and c_face is not None:
                         c_face_n = c_face / (np.linalg.norm(c_face) + 1e-10)
                         sim_face = float(np.dot(q_face_n, c_face_n))
-                        fused = 0.6 * sim_ins + 0.4 * sim_face
+                        fused = max(sim_ins, sim_face)
                     else:
                         sim_face = None
                         fused = sim_ins
@@ -1508,7 +1508,7 @@ def search_criminals():
                             q_face_n = q_face / (np.linalg.norm(q_face) + 1e-10)
                             c_face_n = c_face / (np.linalg.norm(c_face) + 1e-10)
                             sim_facenet = float(np.dot(q_face_n, c_face_n))
-                            final_score = 0.6 * sim_insight + 0.4 * sim_facenet
+                            final_score = max(sim_insight, sim_facenet)
                         else:
                             sim_facenet = None
                             final_score = sim_insight  # InsightFace only
@@ -1523,6 +1523,8 @@ def search_criminals():
                         final_score = embedding_fusion
 
                     embedding_confidence = 1.0
+                    geometric_similarity = 0.0
+                    region_similarity = 0.0
 
                     print(f"  {criminal.full_name}:")
                     print(f"    Final Score: {final_score:.6f}")
@@ -1554,8 +1556,8 @@ def search_criminals():
                         "geometric_similarity":  float(geometric_similarity),
                         "region_similarity":     float(region_similarity),
                         "distance":              float(1.0 - final_score),
-                        "model_used":            "InsightFace + Facenet (weighted fusion)",
-                        "metric_used":           "final_score = 0.6 * cosine(insight_q, insight_db) + 0.4 * cosine(facenet_q, facenet_db)",
+                        "model_used":            "InsightFace + Facenet (max fusion)",
+                        "metric_used":           "final_score = max(cosine(insight_q, insight_db), cosine(facenet_q, facenet_db))",
                         "is_cross_domain":       True,
                         "stage1_rank":           top_k_candidates.index(candidate) + 1,
                         "reranking_applied":     True,
@@ -1723,22 +1725,22 @@ def search_criminals():
                             "value":       float(display_fusion),
                             "percentage":  f"{display_fusion:.1f}%",
                             "raw_value":   float(raw_fusion),
-                            "description": "Fused embedding similarity: 50% ArcFace + 50% Facenet512",
-                            "weight":      "60%"
+                            "description": "Fused embedding similarity: Max(ArcFace, Facenet512)",
+                            "weight":      "100%"
                         },
                         "insightface_similarity": {
                             "value":       float(display_arcface),
                             "percentage":  f"{display_arcface:.1f}%",
                             "raw_value":   float(raw_arcface),
                             "description": "ArcFace model similarity",
-                            "weight":      "50% of fusion"
+                            "weight":      "Considered in Max Fusion"
                         },
                         "facenet_similarity": {
                             "value":       float(display_facenet),
                             "percentage":  f"{display_facenet:.1f}%",
                             "raw_value":   float(raw_facenet),
                             "description": "Facenet512 model similarity",
-                            "weight":      "50% of fusion"
+                            "weight":      "Considered in Max Fusion"
                         },
                         "geometric_similarity": {
                             "value":       float(display_geometric),
