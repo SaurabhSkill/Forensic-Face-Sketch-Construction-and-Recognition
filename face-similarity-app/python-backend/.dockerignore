@@ -17,7 +17,10 @@ env/
 
 Dockerfile
 
-# Environment secrets (injected at runtime via docker-compose env_file)
+# Environment secrets — NEVER copy into image; injected at runtime by Jenkins
+.env
+.env.*
+!.env.example
 
 
 # Temp / runtime files

@@ -5,6 +5,7 @@ services:
     build:
       context: ./facenet_service
       dockerfile: Dockerfile
+    image: saurabh533/forensic-face-sketch-construction-and-recognition:facenet
     container_name: facefind-facenet
     ports:
       - "8001:8001"
@@ -19,17 +20,14 @@ services:
       context: ./python-backend
       dockerfile: Dockerfile
       args:
-        AWS_ACCESS_KEY_ID:     ${AWS_ACCESS_KEY_ID:-}
-        AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
-        AWS_REGION:            ${AWS_REGION:-ap-south-1}
-        MODEL_S3_BUCKET:       ${MODEL_S3_BUCKET:-forensic-models}
-        FACENET_S3_KEY:        ${FACENET_S3_KEY:-facenet512_weights.h5}
-        INSIGHTFACE_S3_KEY:    ${INSIGHTFACE_S3_KEY:-w600k_r50.onnx}
+        # Only non-sensitive build args (model paths, no credentials)
+        MODEL_S3_BUCKET:    ${MODEL_S3_BUCKET:-forensic-models}
+        FACENET_S3_KEY:     ${FACENET_S3_KEY:-facenet512_weights.h5}
+        INSIGHTFACE_S3_KEY: ${INSIGHTFACE_S3_KEY:-w600k_r50.onnx}
+    image: saurabh533/forensic-face-sketch-construction-and-recognition:backend
     container_name: facefind-backend
     ports:
       - "5001:5001"
-    env_file:
-      - ./python-backend/.env
     depends_on:
       - facenet
     restart: always
@@ -39,13 +37,27 @@ services:
       - deepface_weights:/root/.deepface/weights
       - insightface_models:/root/.insightface/models
     environment:
-      # Internal Docker hostname for the Facenet microservice
-      FACENET_API_URL: http://facenet:8001
+      # All secrets injected at runtime by Jenkins — never baked into the image
+      AWS_ACCESS_KEY_ID:     ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION:            ${AWS_REGION:-ap-south-1}
+      AWS_S3_BUCKET_NAME:    ${AWS_S3_BUCKET_NAME}
+      DATABASE_URL:          ${DATABASE_URL}
+      JWT_SECRET:            ${JWT_SECRET}
+      SMTP_SERVER:           ${SMTP_SERVER:-smtp.gmail.com}
+      SMTP_PORT:             ${SMTP_PORT:-587}
+      SMTP_EMAIL:            ${SMTP_EMAIL}
+      SMTP_PASSWORD:         ${SMTP_PASSWORD}
+      PORT:                  ${PORT:-5001}
+      TF_ENABLE_ONEDNN_OPTS: "0"
+      TF_CPP_MIN_LOG_LEVEL:  "2"
+      FACENET_API_URL:       http://facenet:8001
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    image: saurabh533/forensic-face-sketch-construction-and-recognition:frontend
     container_name: facefind-frontend
     ports:
       - "3000:80"
@@ -54,6 +66,9 @@ services:
     restart: always
     networks:
       - facefind-network
+    environment:
+      # Injected at runtime by Jenkins
+      REACT_APP_API_URL: ${REACT_APP_API_URL}
 
 networks:
   facefind-network:

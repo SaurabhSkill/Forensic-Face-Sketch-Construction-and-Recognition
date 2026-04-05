@@ -34,5 +34,4 @@ Thumbs.db
 # Runtime startup flag — generated at server start, not source code
 startup_complete.flag
 
-# Dockerfile — contains environment variables, excluded from version control
-Dockerfile
+# Dockerfile is now safe to commit — no secrets are hardcoded
