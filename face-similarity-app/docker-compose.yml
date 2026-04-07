@@ -36,6 +36,8 @@ services:
     volumes:
       - deepface_weights:/root/.deepface/weights
       - insightface_models:/root/.insightface/models
+    env_file:
+      - ./python-backend/.env
     environment:
       # All secrets injected at runtime by Jenkins — never baked into the image
       AWS_ACCESS_KEY_ID:     ${AWS_ACCESS_KEY_ID}
@@ -54,21 +56,20 @@ services:
       FACENET_API_URL:       http://facenet:8001
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    image: saurabh533/forensic-face-sketch-construction-and-recognition:frontend
-    container_name: facefind-frontend
-    ports:
-      - "3000:80"
-    depends_on:
-      - backend
-    restart: always
-    networks:
-      - facefind-network
-    environment:
-      # Injected at runtime by Jenkins
+  build:
+    context: ./frontend
+    dockerfile: Dockerfile
+    args:
       REACT_APP_API_URL: ${REACT_APP_API_URL}
+  image: saurabh533/forensic-face-sketch-construction-and-recognition:frontend
+  container_name: facefind-frontend
+  ports:
+    - "3000:80"
+  depends_on:
+    - backend
+  restart: always
+  networks:
+    - facefind-network
 
 networks:
   facefind-network:
